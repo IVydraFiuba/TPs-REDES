@@ -18,6 +18,18 @@ Si el entorno virtual ya fue creado anteriormente, solo es necesario activarlo
 source .venv/bin/activate
 ```
 
+## Test
+
+Ejecutar todos los tests
+```
+python -m pytest
+```
+
+Ejecutar tests de un archivo específico
+```
+python -m pytest tests/lib/test_args.py
+```
+
 ## Linter PEP8
 
 El proyecto utiliza `flake8` para verificar el cumplimiento de PEP8.
@@ -47,19 +59,19 @@ La aplicación cuenta con tres comandos principales:
 Iniciar el servidor:
 
 ```bash
-python src/start-server -H <ADDR> -p <PORT> -s <DIRPATH>
+python src/start-server.py -H ADDR -p PORT -s DIRPATH
 ```
 
 Opciones disponibles:
 
-| Flag              | Descripción                                       |
-| ----------------- | ------------------------------------------------- |
-| `-h`, `--help`    | Muestra la ayuda del comando.                     |
-| `-v`, `--verbose` | Aumenta el nivel de detalle de la salida.         |
-| `-q`, `--quiet`   | Reduce el nivel de detalle de la salida.          |
-| `-H`, `--host`    | Dirección IP donde se ejecutará el servicio.      |
-| `-p`, `--port`    | Puerto utilizado por el servidor.                 |
-| `-s`, `--storage` | Directorio utilizado para almacenar los archivos. |
+| Flag              | Descripción                     |
+| ----------------- | ------------------------------- |
+| `-h`, `--help`    | show this help message and exit |
+| `-v`, `--verbose` | increase output verbosity       |
+| `-q`, `--quiet`   | decrease output verbosity       |
+| `-H`, `--host`    | service IP address              |
+| `-p`, `--port`    | service port                    |
+| `-s`, `--storage` | storage dir path                |
 
 
 ### Upload
@@ -67,21 +79,21 @@ Opciones disponibles:
 Permite enviar un archivo desde el cliente hacia el servidor.
 
 ```bash
-python src/upload -H <ADDR> -p <PORT> -s <FILEPATH> -n <FILENAME> -r <PROTOCOL>
+python src/upload.py -H ADDR -p PORT -s FILEPATH -n FILENAME -r protocol
 ```
 
 Opciones disponibles:
 
-| Flag               | Descripción                                              |
-| ------------------ | -------------------------------------------------------- |
-| `-h`, `--help`     | Muestra la ayuda del comando.                            |
-| `-v`, `--verbose`  | Aumenta el nivel de detalle de la salida.                |
-| `-q`, `--quiet`    | Reduce el nivel de detalle de la salida.                 |
-| `-H`, `--host`     | Dirección IP del servidor.                               |
-| `-p`, `--port`     | Puerto del servidor.                                     |
-| `-s`, `--src`      | Ruta del archivo local que se desea enviar.              |
-| `-n`, `--name`     | Nombre con el que se guardará el archivo en el servidor. |
-| `-r`, `--protocol` | Protocolo de recuperación de errores a utilizar.         |
+| Flag               | Descripción                     |
+| ------------------ | ------------------------------- |
+| `-h`, `--help`     | show this help message and exit |
+| `-v`, `--verbose`  | increase output verbosity       |
+| `-q`, `--quiet`    | decrease output verbosity       |
+| `-H`, `--host`     | server IP address               |
+| `-p`, `--port`     | server port                     |
+| `-s`, `--src`      | source file path                |
+| `-n`, `--name`     | file name                       |
+| `-r`, `--protocol` | error recovery protocol         |
 
 
 
@@ -90,19 +102,18 @@ Opciones disponibles:
 Permite descargar un archivo desde el servidor.
 
 ```bash
-python src/download -H <HOST> -p <PORT> -d <FILEPATH> -n <FILENAME> -r <PROTOCOL>
+python src/download.py -H ADDR -p PORT -d FILEPATH -n FILENAME -r protocol
 ```
 
 Opciones disponibles:
 
-| Flag               | Descripción                                      |
-| ------------------ | ------------------------------------------------ |
-| `-h`, `--help`     | Muestra la ayuda del comando.                    |
-| `-v`, `--verbose`  | Aumenta el nivel de detalle de la salida.        |
-| `-q`, `--quiet`    | Reduce el nivel de detalle de la salida.         |
-| `-H`, `--host`     | Dirección IP del servidor.                       |
-| `-p`, `--port`     | Puerto del servidor.                             |
-| `-d`, `--dst`      | Ruta donde se guardará el archivo descargado.    |
-| `-n`, `--name`     | Nombre del archivo que se desea descargar.       |
-| `-r`, `--protocol` | Protocolo de recuperación de errores a utilizar. |
-
+| Flag               | Descripción                     |
+| ------------------ | ------------------------------- |
+| `-h`, `--help`     | show this help message and exit |
+| `-v`, `--verbose`  | increase output verbosity       |
+| `-q`, `--quiet`    | decrease output verbosity       |
+| `-H`, `--host`     | server IP address               |
+| `-p`, `--port`     | server port                     |
+| `-d`, `--dst`      | destination file path           |
+| `-n`, `--name`     | file name                       |
+| `-r`, `--protocol` | error recovery protocol         |
