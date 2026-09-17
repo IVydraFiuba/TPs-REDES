@@ -1,4 +1,5 @@
 import argparse
+from lib.constants import PROTOCOLS
 
 
 class CustomFormatter(argparse.HelpFormatter):
@@ -99,7 +100,7 @@ def parsear_argumentos_subida(argv=None):
     parser.add_argument(
         "-r", "--protocol",
         metavar="protocol",
-        type=str,
+        choices=list(PROTOCOLS),
         required=True,
         help="error recovery protocol"
     )
@@ -136,7 +137,7 @@ def parsear_argumentos_descarga(argv=None):
     parser.add_argument(
         "-r", "--protocol",
         metavar="protocol",
-        type=str,
+        choices=list(PROTOCOLS),
         required=True,
         help="error recovery protocol"
     )
