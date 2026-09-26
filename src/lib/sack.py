@@ -42,10 +42,19 @@ class SackTransport:
         #     tramos del buffer que estan por encima de proximo
         #     (como mucho MAX_BLOQUES_SACK)
         #   - devolver los payloads en orden; b'' al recibir el FIN
+        #   - recv() tiene que tener timeout: si el FIN se pierde,
+        #     sin timeout el receptor espera para siempre. Despues de
+        #     MAX_RETRIES timeouts seguidos sin recibir nada, dar la
+        #     conexion por cerrada y devolver b''. El que llama compara
+        #     lo escrito contra el filesize del handshake para saber si
+        #     quedo incompleto.
         raise NotImplementedError
 
     def close(self):
-        # TODO: si fui el emisor, mandar segmento.empaquetar_fin() y
-        #   esperar el FINACK, retransmitiendo el FIN hasta MAX_RETRIES.
-        #   Despues cerrar el socket.
+        # TODO: emisor -> mandar segmento.empaquetar_fin() unas cuantas
+        #   veces espaciadas y cerrar, sin esperar confirmacion.
+        #   receptor -> antes de cerrar, quedarse un rato respondiendo
+        #   los DATA y FIN duplicados que sigan llegando. Si cierra de
+        #   una y se perdio el ultimo ACK, el emisor queda retransmitiendo
+        #   contra un socket cerrado.
         raise NotImplementedError

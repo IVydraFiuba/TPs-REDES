@@ -10,7 +10,6 @@ Cabecera de 7 bytes en formato de red (!BIH):
     ACK    : seq   = proximo segmento esperado (ACK acumulativo)
              largo = cantidad de bloques SACK, seguidos de los bloques
     FIN    : seq   = total de segmentos enviados
-    FINACK : seq   = 0
 
 Cada bloque SACK son dos enteros de 32 bits (!II): el primero y el
 ultimo numero de segmento de un tramo recibido, los dos incluidos.
@@ -33,7 +32,6 @@ from lib.constants import PAYLOAD_SIZE
 DATA = 0
 ACK = 1
 FIN = 2
-FINACK = 3
 
 _CABECERA = "!BIH"
 _BLOQUE = "!II"
@@ -68,10 +66,6 @@ def empaquetar_fin(total_segmentos=0):
     return struct.pack(_CABECERA, FIN, total_segmentos, 0)
 
 
-def empaquetar_finack():
-    return struct.pack(_CABECERA, FINACK, 0, 0)
-
-
 def desempaquetar(datos):
     """Devuelve un Segmento. Lanza ValueError si esta mal formado."""
     if len(datos) < TAM_CABECERA:
@@ -96,7 +90,7 @@ def desempaquetar(datos):
         )
         return Segmento(tipo, seq, b"", bloques)
 
-    if tipo in (FIN, FINACK):
+    if tipo == FIN:
         if largo != 0 or cuerpo:
             raise ValueError(f"el tipo {tipo} no lleva cuerpo")
         return Segmento(tipo, seq, b"", ())
