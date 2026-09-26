@@ -1,7 +1,4 @@
-import sys
 import pytest
-
-sys.path.insert(0, "src")
 
 from lib.args import (
     parsear_argumentos_servidor,

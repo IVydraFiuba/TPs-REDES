@@ -33,7 +33,12 @@ def conectar(server_addr, opcode, protocolo, filename, filesize, logger):
             logger.debug(f"saludo sin respuesta, reintento {intento + 1}")
             continue
 
-        status, filesize_resp = _desempaquetar_respuesta(datos)
+        try:
+            status, filesize_resp = _desempaquetar_respuesta(datos)
+        except ValueError:
+            logger.debug("respuesta invalida, la descarto")
+            continue
+
         if status != ERR_OK:
             sock.close()
             raise ConnectionError(f"handshake rechazado: status={status}")
@@ -50,10 +55,22 @@ def recibir_handshake(listen_sock):
     return opcode, protocolo, filesize, filename, client_addr
 
 
-def responder_handshake(client_addr, status, filesize=0):
+def responder_handshake(listen_sock, client_addr, status, filesize=0):
+    """Responde el handshake y devuelve el socket de datos.
+
+    Si el pedido se acepta, crea el socket propio de la sesion y
+    responde desde ahi, para que el cliente aprenda a que puerto
+    mandar. Si se rechaza, responde por el socket de escucha y
+    devuelve None: una sesion rechazada no necesita socket propio.
+    """
+    respuesta = _empaquetar_respuesta(status, filesize)
+    if status != ERR_OK:
+        listen_sock.sendto(respuesta, client_addr)
+        return None
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("", 0))
-    sock.sendto(_empaquetar_respuesta(status, filesize), client_addr)
+    sock.sendto(respuesta, client_addr)
     return sock
 
 # Handshake
@@ -69,9 +86,13 @@ def _empaquetar_handshake(opcode, protocolo, filesize, filename):
 
 def _desempaquetar_handshake(datos):
     tam = struct.calcsize(_FORMATO)
+    if len(datos) < tam:
+        raise ValueError("handshake incompleto")
     opcode, protocolo, filesize, largo = struct.unpack(_FORMATO, datos[:tam])
-    nombre = datos[tam:tam + largo].decode(ENCODING)
-    return opcode, protocolo, filesize, nombre
+    nombre = datos[tam:tam + largo]
+    if len(nombre) != largo:
+        raise ValueError("nombre de archivo truncado")
+    return opcode, protocolo, filesize, nombre.decode(ENCODING)
 
 # Respuesta del handshake
 
@@ -81,5 +102,7 @@ def _empaquetar_respuesta(status, filesize=0):
 
 
 def _desempaquetar_respuesta(datos):
+    if len(datos) != struct.calcsize(_FORMATO_RESP):
+        raise ValueError("respuesta de handshake invalida")
     status, filesize = struct.unpack(_FORMATO_RESP, datos)
     return status, filesize

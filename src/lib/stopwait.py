@@ -7,13 +7,15 @@ class StopWaitTransport:
       - send(data): manda todos los bytes de forma confiable.
       - recv():     devuelve el proximo bloque; b'' = EOF.
       - close():    cierra ordenadamente y libera el socket.
+
+    El formato de los segmentos esta en lib/segmento.py y es el mismo
+    que usa SackTransport. Stop & Wait no manda bloques SACK: sus ACK
+    van sin bloques.
     """
 
     # TODO(Parte 2): implementar Stop & Wait.
-    #   - send: numero de secuencia, esperar ACK, timeout + retransmision
-    #   - recv: validar seq, mandar ACK, entregar en orden; b'' en FIN
-    #   - close: enviar FIN y liberar el socket
-    #   Wire format de segmentos: interno tuyo. Tolerar 10% perdida, RTT 300ms.
+    #   Arranca con: from lib import segmento
+    #   Tolerar 10% de perdida y RTT de hasta 300 ms.
 
     def __init__(self, sock, peer_addr, logger):
         self._sock = sock
@@ -21,10 +23,26 @@ class StopWaitTransport:
         self._log = logger
 
     def send(self, data):
+        # TODO: partir data en trozos de PAYLOAD_SIZE y, por cada uno:
+        #   1. mandar segmento.empaquetar_data(seq, trozo) al peer
+        #   2. esperar el ACK con timeout y leerlo con
+        #      segmento.desempaquetar(datos)
+        #   3. si el .seq del ACK es mayor que seq, el trozo llego:
+        #      seguir con el siguiente
+        #      si vence el timeout: retransmitir el mismo trozo
         raise NotImplementedError
 
     def recv(self):
+        # TODO: recibir del socket y segmento.desempaquetar(datos).
+        #   - DATA con .seq == el esperado: responder
+        #     segmento.empaquetar_ack(esperado + 1) y devolver .payload
+        #   - DATA con .seq menor: es un duplicado, volver a mandar el
+        #     ACK y descartar el payload (si no, el emisor se cuelga)
+        #   - FIN: responder segmento.empaquetar_finack() y devolver b''
         raise NotImplementedError
 
     def close(self):
+        # TODO: si fui el emisor, mandar segmento.empaquetar_fin() y
+        #   esperar el FINACK, retransmitiendo el FIN hasta MAX_RETRIES.
+        #   Despues cerrar el socket.
         raise NotImplementedError
