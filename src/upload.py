@@ -1,4 +1,9 @@
+import logging
+
 from lib.args import parsear_argumentos_subida
+from lib.logger import configurar_logger
+
+logger = logging.getLogger(__name__)
 
 # TODO(Persona 5): cliente real.
 #   - protocol.conectar(...) con -r mapeado por PROTOCOLS; luego send/recv
@@ -7,17 +12,13 @@ from lib.args import parsear_argumentos_subida
 #           -s ./foto.jpg -n foto.jpg -r sw
 
 
-def print_debug_args(args):
-    print(f"Verbose: {args.verbose}")
-    print(f"Quiet: {args.quiet}")
-    print(f"Host: {args.host}")
-    print(f"Port: {args.port}")
-    print(f"FILEPATH: {args.src}")
-    print(f"FILENAME: {args.name}")
-    print(f"Protocol: {args.protocol}")
-
-
 if __name__ == "__main__":
     args = parsear_argumentos_subida()
-    print_debug_args(args)
-    # Codigo aca
+    configurar_logger(args.verbose, args.quiet)
+    logger.info(f"Verbose: {args.verbose}")
+    logger.info(f"Quiet: {args.quiet}")
+    logger.info(f"Host: {args.host}")
+    logger.info(f"Port: {args.port}")
+    logger.info(f"FILEPATH: {args.src}")
+    logger.info(f"FILENAME: {args.name}")
+    logger.info(f"Protocol: {args.protocol}")

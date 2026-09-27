@@ -1,4 +1,9 @@
+import logging
+
 from lib.args import parsear_argumentos_servidor
+from lib.logger import configurar_logger
+
+logger = logging.getLogger(__name__)
 
 # TODO(Parte 4): servidor real.
 #   - escuchar; usar protocol.recibir_handshake / responder_handshake
@@ -7,18 +12,11 @@ from lib.args import parsear_argumentos_servidor
 #  Ejemplo: python src/start-server.py -H 127.0.0.1 -p 8080 -s ./storage
 
 
-def print_debug_args(args):
-    print(f"Verbose: {args.verbose}")
-    print(f"Quiet: {args.quiet}")
-    print(f"Host: {args.host}")
-    print(f"Port: {args.port}")
-    print(f"Storage: {args.storage}")
-
-
 if __name__ == "__main__":
     args = parsear_argumentos_servidor()
-    print_debug_args(args)
-    # Codigo aca
-    # recibir handshake, responder handshake, crear transport
-    # chequear archivo espacio y guardar
-    # un solo thread por cliente
+    configurar_logger(args.verbose, args.quiet)
+    logger.info(f"Verbose: {args.verbose}")
+    logger.info(f"Quiet: {args.quiet}")
+    logger.info(f"Host: {args.host}")
+    logger.info(f"Port: {args.port}")
+    logger.info(f"Storage: {args.storage}")
