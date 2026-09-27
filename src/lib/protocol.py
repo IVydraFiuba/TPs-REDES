@@ -14,8 +14,13 @@ from lib.constants import (
 
 logger = logging.getLogger(__name__)
 
+# opcode, protocolo, filesize, largo_del_nombre
 _FORMATO = "!BBIB"
+
+# status del servidor + filesize (usado en DOWNLOAD)
 _FORMATO_RESP = "!BI"
+
+# Orquestacion de la conexion
 
 
 def conectar(server_addr, opcode, protocolo, filename, filesize):
@@ -54,6 +59,13 @@ def recibir_handshake(listen_sock):
 
 
 def responder_handshake(listen_sock, client_addr, status, filesize=0):
+    """Responde el handshake y devuelve el socket de datos.
+
+    Si el pedido se acepta, crea el socket propio de la sesion y
+    responde desde ahi, para que el cliente aprenda a que puerto
+    mandar. Si se rechaza, responde por el socket de escucha y
+    devuelve None: una sesion rechazada no necesita socket propio.
+    """
     respuesta = _empaquetar_respuesta(status, filesize)
     if status != ERR_OK:
         listen_sock.sendto(respuesta, client_addr)
@@ -63,6 +75,8 @@ def responder_handshake(listen_sock, client_addr, status, filesize=0):
     sock.bind(("", 0))
     sock.sendto(respuesta, client_addr)
     return sock
+
+# Handshake
 
 
 def _empaquetar_handshake(opcode, protocolo, filesize, filename):
@@ -82,6 +96,8 @@ def _desempaquetar_handshake(datos):
     if len(nombre) != largo:
         raise ValueError("nombre de archivo truncado")
     return opcode, protocolo, filesize, nombre.decode(ENCODING)
+
+# Respuesta del handshake
 
 
 def _empaquetar_respuesta(status, filesize=0):
