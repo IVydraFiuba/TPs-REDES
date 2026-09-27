@@ -3,7 +3,7 @@ import logging
 import socket
 import struct
 
-from lib.constants import (
+from lib.borrador.constants import (
     BUFFER_SIZE,
     ENCODING,
     ERR_OK,

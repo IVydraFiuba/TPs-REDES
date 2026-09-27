@@ -1,9 +1,9 @@
 # lib/transport.py
 import logging
 
-from lib.constants import PROTO_SACK, PROTO_SW
-from lib.sack import SackTransport
-from lib.stopwait import StopWaitTransport
+from lib.constantes import PROTO_SACK, PROTO_SW
+from lib.borrador.sack import SackTransport
+from lib.borrador.stopwait import StopWaitTransport
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,12 @@
 import argparse
-from lib.constants import PROTOCOLS
+
+from lib.constantes import (
+    DEFAULT_CLIENT_DIR_DESCARGAS,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_SERVER_ALMACENAMIENTO,
+    PROTOCOLS,
+)
 
 
 class CustomFormatter(argparse.HelpFormatter):
@@ -36,15 +43,17 @@ def _agregar_argumentos_comunes(parser, is_server=False):
         "-H", "--host",
         metavar="ADDR",
         type=str,
-        required=True,
-        help=host_help
+        required=False,
+        default=DEFAULT_HOST,
+        help=f"{host_help} (default: {DEFAULT_HOST})"
     )
     parser.add_argument(
         "-p", "--port",
         metavar="PORT",
         type=int,
-        required=True,
-        help=port_help
+        required=False,
+        default=DEFAULT_PORT,
+        help=f"{port_help} (default: {DEFAULT_PORT})"
     )
 
 
@@ -64,8 +73,9 @@ def parsear_argumentos_servidor(argv=None):
         "-s", "--storage",
         metavar="DIRPATH",
         type=str,
-        required=True,
-        help="storage dir path"
+        required=False,
+        default=DEFAULT_SERVER_ALMACENAMIENTO,
+        help=f"storage dir path (default: {DEFAULT_SERVER_ALMACENAMIENTO})"
     )
     return parser.parse_args(argv)
 
@@ -124,8 +134,9 @@ def parsear_argumentos_descarga(argv=None):
         "-d", "--dst",
         metavar="FILEPATH",
         type=str,
-        required=True,
-        help="destination file path"
+        required=False,
+        default=DEFAULT_CLIENT_DIR_DESCARGAS,
+        help=f"destination file path (default: {DEFAULT_CLIENT_DIR_DESCARGAS})"
     )
     parser.add_argument(
         "-n", "--name",
