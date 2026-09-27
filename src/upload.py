@@ -5,16 +5,8 @@ from lib.logger import configurar_logger
 
 logger = logging.getLogger(__name__)
 
-# TODO(Persona 5): cliente real.
-#   - protocol.conectar(...) con -r mapeado por PROTOCOLS; luego send/recv
-#   - (aparte) topologia mininet, capturas y analisis SACK vs S&W
-#  Ejemplo: python src/upload.py -H 127.0.0.1 -p 8080
-#           -s ./foto.jpg -n foto.jpg -r sw
 
-
-if __name__ == "__main__":
-    args = parsear_argumentos_subida()
-    configurar_logger(args.verbose, args.quiet)
+def print_debug_args(args):
     logger.info(f"Verbose: {args.verbose}")
     logger.info(f"Quiet: {args.quiet}")
     logger.info(f"Host: {args.host}")
@@ -22,3 +14,11 @@ if __name__ == "__main__":
     logger.info(f"FILEPATH: {args.src}")
     logger.info(f"FILENAME: {args.name}")
     logger.info(f"Protocol: {args.protocol}")
+
+def main_subida():
+    args = parsear_argumentos_subida()
+    configurar_logger(args.verbose, args.quiet)
+    print_debug_args(args)
+
+if __name__ == "__main__":
+    main_subida()
