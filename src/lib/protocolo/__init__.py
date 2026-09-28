@@ -14,9 +14,12 @@ from .errores import (
 from .mensajes import (
     codificar_error,
     codificar_mensaje,
+    codificar_respuesta_aceptada,
     codificar_solicitud,
     decodificar_error,
     decodificar_mensaje,
+    decodificar_nombre,
+    decodificar_respuesta_aceptada,
     decodificar_solicitud,
 )
 
@@ -36,4 +39,7 @@ __all__ = [
     "decodificar_solicitud",
     "codificar_error",
     "decodificar_error",
+    "decodificar_nombre",
+    "codificar_respuesta_aceptada",
+    "decodificar_respuesta_aceptada",
 ]

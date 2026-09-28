@@ -1,9 +1,10 @@
 """Cliente UDP para subida y descarga de archivos."""
 
+import json
 import logging
 import socket
 
-from lib.archivos.archivos_cliente import abrir_origen_subida
+from lib.archivos.archivos_cliente import abrir_origen_subida, preparar_destino_descarga
 from lib.archivos.errores_archivos import ErrorArchivo
 from lib.canal.udp_directo import CanalUdpDirecto
 from lib.constantes import PROTO_DIRECTO, TAMANIO_BLOQUE
@@ -15,9 +16,8 @@ from lib.protocolo.errores import (
 )
 from lib.protocolo.mensajes import (
     codificar_mensaje,
-    codificar_solicitud,
     decodificar_error,
-    decodificar_mensaje,
+    decodificar_respuesta_aceptada,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,10 @@ class Cliente:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
                 canal = CanalUdpDirecto(conexion, (self._host, self._port))
 
-                solicitud = codificar_solicitud(nombre, tamanio)
-                canal.enviar_datagrama(solicitud)
+                solicitud = json.dumps(
+                    {"nombre": nombre, "tamanio": tamanio, "modo": "directo"}
+                ).encode("utf-8")
+                canal.enviar("SOLICITUD_UPLOAD", solicitud)
                 logger.debug("Solicitud enviada: %s", nombre)
 
                 self._esperar_respuesta(canal, "ACEPTADO")
@@ -72,11 +74,69 @@ class Cliente:
                 )
 
     def descargar(self, destino, nombre):
-        """Descarga un archivo del servidor. No implementado."""
-        raise ErrorModoNoImplementado(
-            "Descarga aún no implementada. "
-            "Solo 'subir' está disponible en modo 'directo'."
+        """Descarga un archivo del servidor usando el protocolo directo."""
+        if self._protocolo != PROTO_DIRECTO:
+            raise ErrorModoNoImplementado(
+                f"Protocolo {self._protocolo} no implementado. "
+                "Usar 'directo' para pruebas."
+            )
+
+        logger.info(
+            "Iniciando descarga: %s -> %s",
+            nombre, destino
         )
+
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
+            canal = CanalUdpDirecto(conexion, (self._host, self._port))
+
+            solicitud = json.dumps({"nombre": nombre}).encode("utf-8")
+            canal.enviar("SOLICITUD_DESCARGA", solicitud)
+            logger.debug("Solicitud enviada: %s", nombre)
+
+            tipo, carga = canal.recibir()
+            if tipo == "ERROR":
+                codigo, detalle = decodificar_error(carga)
+                logger.warning("Error del servidor: %s - %s", codigo, detalle)
+                raise ErrorOperacionRemota(f"{codigo}: {detalle}")
+
+            if tipo != "ACEPTADO":
+                raise ErrorRespuesta(
+                    f"Respuesta inesperada: se esperaba ACEPTADO, llegó {tipo}"
+                )
+
+            tamanio = decodificar_respuesta_aceptada(carga)
+            logger.debug("Servidor aceptó, tamaño: %d bytes", tamanio)
+
+            with preparar_destino_descarga(destino) as escritor:
+                bytes_recibidos = 0
+                while True:
+                    tipo, datos = canal.recibir()
+
+                    if tipo == "DATOS":
+                        escritor.escribir_bloque(datos)
+                        bytes_recibidos += len(datos)
+                        logger.debug(
+                            "Recibido bloque: %d bytes (total: %d/%d)",
+                            len(datos), bytes_recibidos, tamanio
+                        )
+
+                    elif tipo == "FIN" and not datos:
+                        logger.debug(
+                            "Descarga completada: %d/%d bytes",
+                            bytes_recibidos, tamanio
+                        )
+                        escritor.confirmar()
+                        canal.enviar("COMPLETADO")
+                        logger.info(
+                            "Descarga completada: %s (%d bytes)",
+                            nombre, bytes_recibidos
+                        )
+                        return
+
+                    else:
+                        raise ErrorRespuesta(
+                            f"Mensaje inesperado: {tipo}"
+                        )
 
     def _esperar_respuesta(self, canal, esperado):
         """Espera un mensaje del servidor. Maneja errores."""

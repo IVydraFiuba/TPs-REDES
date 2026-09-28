@@ -2,6 +2,10 @@
 Dado que UDP ya provee verificación de integridad (checksum), asumiremos que los paquetes que llegan a la capa de aplicación no están corruptos.
 
 ## DESICIONES 
+No se acepta la subida de un archivo que ya esta subido en el servidor, por ejemplo no se puede subir un archivo de nombre ejemplo.txt si ya existe el ejemplo.txt en el almacenamiento del servidor.
+Tampoco se puede subir un archivo de nombre ejemplo2.txt si ya se esta subiendo ese archivo por otro cliente. Esto evita casos donde 2 clientes intentan subir el mismo archivo al mismo tiempo.
+
+
 
 ## COMPLICACIONES (motivan desiciones)
 

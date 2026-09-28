@@ -31,7 +31,7 @@ def main_subida():
     print_debug_args(args)
 
     try:
-        Cliente(args.host, args.port, args.protocol).subir(args.src, args.name)
+        Cliente(args.host, args.port, 2).subir(args.src, args.name) # hardcodeo el 2 que signigica usar el protocolo mock DIRECTO
     except ErrorModoNoImplementado as e:
         logger.error("Modo no implementado: %s", e)
         return 1

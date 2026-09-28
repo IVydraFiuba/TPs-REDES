@@ -8,6 +8,7 @@ from lib.archivos.archivo_bloques import EscritorArchivo, LectorArchivo
 from lib.archivos.errores_archivos import (
     ErrorAlmacenamiento,
     ErrorArchivoExistente,
+    ErrorArchivoInexistente,
     ErrorNombreArchivo,
     ErrorTransferenciaEnCurso,
 )
@@ -50,6 +51,14 @@ class AlmacenamientoServidor:
     def abrir_descarga(self, nombre):
         """El llamador cierra el lector con `with`."""
         return LectorArchivo(self._ruta(nombre))
+
+    def obtener_info_descarga(self, nombre):
+        """Obtiene información para descarga. Retorna (ruta, tamanio)."""
+        ruta = self._ruta(nombre)
+        if not ruta.exists():
+            raise ErrorArchivoInexistente(f"El archivo no existe: {nombre}")
+        tamanio = ruta.stat().st_size
+        return ruta, tamanio
 
     @contextmanager
     def recibir_subida(self, nombre):

@@ -14,6 +14,7 @@ _TIPOS = {
     "FIN": 4,
     "COMPLETADO": 5,
     "ERROR": 6,
+    "SOLICITUD_DESCARGA": 7,
 }
 
 _TIPOS_CODIGO = {codigo: nombre for nombre, codigo in _TIPOS.items()}
@@ -79,3 +80,33 @@ def decodificar_error(carga):
     if "codigo" not in datos or "detalle" not in datos:
         raise ErrorMensaje("Error faltan campos obligatorios")
     return datos["codigo"], datos["detalle"]
+
+
+def decodificar_nombre(carga):
+    """Decodifica una solicitud que solo contiene nombre. Retorna nombre."""
+    try:
+        datos = json.loads(carga.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ErrorMensaje(f"JSON inválido: {e}")
+    if "nombre" not in datos:
+        raise ErrorMensaje("Solicitud faltan campos obligatorios")
+    return datos["nombre"]
+
+
+def codificar_respuesta_aceptada(tamanio):
+    """Codifica respuesta ACEPTADO con tamaño (para download)."""
+    return json.dumps(
+        {"tamanio": tamanio},
+        ensure_ascii=False
+    ).encode("utf-8")
+
+
+def decodificar_respuesta_aceptada(carga):
+    """Decodifica respuesta ACEPTADO. Retorna tamanio."""
+    try:
+        datos = json.loads(carga.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ErrorMensaje(f"Respuesta con JSON inválido: {e}")
+    if "tamanio" not in datos:
+        raise ErrorMensaje("Respuesta faltan campos obligatorios")
+    return datos["tamanio"]

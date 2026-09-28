@@ -7,12 +7,14 @@ import threading
 from lib.archivos.almacenamiento_servidor import AlmacenamientoServidor
 from lib.archivos.errores_archivos import ErrorArchivo
 from lib.canal.udp_directo import CanalUdpDirecto
-from lib.constantes import TAMANIO_MAX_DATAGRAMA, TIMEOUT_SERVIDOR
+from lib.constantes import TAMANIO_BLOQUE, TAMANIO_MAX_DATAGRAMA, TIMEOUT_SERVIDOR
 from lib.protocolo.errores import ErrorMensaje
 from lib.protocolo.mensajes import (
     codificar_error,
     codificar_mensaje,
+    codificar_respuesta_aceptada,
     decodificar_mensaje,
+    decodificar_nombre,
     decodificar_solicitud,
 )
 
@@ -50,17 +52,27 @@ class Servidor:
 
                 try:
                     tipo, carga = decodificar_mensaje(datagrama)
-                    if tipo != "SOLICITUD_UPLOAD":
-                        raise ErrorMensaje(
-                            f"Se esperaba SOLICITUD_UPLOAD, llegó {tipo}"
-                        )
 
-                    nombre, tamanio = decodificar_solicitud(carga)
-                    logger.info(
-                        "Solicitud de %s: %s (%d bytes)",
-                        direccion, nombre, tamanio
-                    )
-                    self._procesar_subida(direccion, nombre, tamanio)
+                    if tipo == "SOLICITUD_UPLOAD":
+                        nombre, tamanio = decodificar_solicitud(carga)
+                        logger.info(
+                            "Solicitud de upload de %s: %s (%d bytes)",
+                            direccion, nombre, tamanio
+                        )
+                        self._procesar_subida(direccion, nombre, tamanio)
+
+                    elif tipo == "SOLICITUD_DESCARGA":
+                        nombre = decodificar_nombre(carga)
+                        logger.info(
+                            "Solicitud de descarga de %s: %s",
+                            direccion, nombre
+                        )
+                        self._procesar_descarga(direccion, nombre)
+
+                    else:
+                        raise ErrorMensaje(
+                            f"Tipo de mensaje desconocido: {tipo}"
+                        )
 
                 except (ErrorArchivo, ErrorMensaje) as e:
                     logger.warning("Error de %s: %s", direccion, e)
@@ -120,6 +132,52 @@ class Servidor:
                         raise ErrorMensaje(
                             f"Mensaje inesperado: {tipo}"
                         )
+
+        except ErrorArchivo as e:
+            logger.error("Error de archivo procesando %s: %s", nombre, e)
+            try:
+                self._conexion.sendto(
+                    codificar_mensaje(
+                        "ERROR",
+                        codificar_error(type(e).__name__, str(e))
+                    ),
+                    direccion
+                )
+            except OSError:
+                pass
+
+    def _procesar_descarga(self, direccion, nombre):
+        """Procesa una descarga de archivo hacia un cliente."""
+        try:
+            ruta, tamanio = self._almacenamiento.obtener_info_descarga(nombre)
+            canal = self._clase_canal(self._conexion, direccion)
+            canal.enviar("ACEPTADO", codificar_respuesta_aceptada(tamanio))
+            logger.debug(
+                "Enviado ACEPTADO a %s: %s (%d bytes)",
+                direccion, nombre, tamanio
+            )
+
+            with self._almacenamiento.abrir_descarga(nombre) as lector:
+                bytes_enviados = 0
+                while True:
+                    datos = lector.leer_bloque(TAMANIO_BLOQUE)
+                    if not datos:
+                        break
+                    canal.enviar("DATOS", datos)
+                    bytes_enviados += len(datos)
+
+            canal.enviar("FIN")
+            logger.info(
+                "Archivo %s enviado completo (%d bytes)",
+                nombre, bytes_enviados
+            )
+
+            tipo, _ = canal.recibir()
+            if tipo != "COMPLETADO":
+                logger.warning(
+                    "Cliente %s no envió COMPLETADO, llegó: %s",
+                    direccion, tipo
+                )
 
         except ErrorArchivo as e:
             logger.error("Error de archivo procesando %s: %s", nombre, e)
