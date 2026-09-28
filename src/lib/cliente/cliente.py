@@ -7,7 +7,13 @@ import socket
 from lib.archivos.archivos_cliente import abrir_origen_subida, preparar_destino_descarga
 from lib.archivos.errores_archivos import ErrorArchivo
 from lib.canal.udp_directo import CanalUdpDirecto
-from lib.constantes import PROTO_DIRECTO, TAMANIO_BLOQUE
+from lib.constantes import (
+    PROTO_DIRECTO,
+    PROTO_SACK,
+    PROTO_SW,
+    PROTOCOLS,
+    TAMANIO_BLOQUE,
+)
 from lib.protocolo.errores import (
     ErrorComunicacion,
     ErrorModoNoImplementado,
@@ -23,11 +29,21 @@ from lib.protocolo.mensajes import (
 logger = logging.getLogger(__name__)
 
 
+def parsear_protocolo(protocolo_str):
+    """Convierte string de protocolo ('sw', 'sack', 'directo') a valor entero."""
+    if protocolo_str not in PROTOCOLS:
+        raise ErrorModoNoImplementado(
+            f"Protocolo desconocido: {protocolo_str}. "
+            f"Opciones: {list(PROTOCOLS.keys())}"
+        )
+    return PROTOCOLS[protocolo_str]
+
+
 class Cliente:
     def __init__(self, host, port, protocolo):
         self._host = host
         self._port = port
-        self._protocolo = protocolo
+        self._protocolo = parsear_protocolo(protocolo)
         logger.debug(f"Cliente creado: {host}:{port}, protocolo={protocolo}")
 
     def subir(self, origen, nombre):

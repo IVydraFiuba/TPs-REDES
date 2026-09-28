@@ -31,7 +31,7 @@ def main_descarga():
     print_debug_args(args)
 
     try:
-        Cliente(args.host, args.port, 2).descargar(   #hardcode el protocolo como 2 DIRECTO es un mock -> rempalzar por args.protocol
+        Cliente(args.host, args.port, args.protocol).descargar(
             args.dst, args.name
         )
     except ErrorModoNoImplementado as e:
