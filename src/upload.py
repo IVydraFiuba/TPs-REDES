@@ -1,8 +1,16 @@
 import logging
+import sys
 
+from lib.archivos.errores_archivos import ErrorArchivo
 from lib.args import parsear_argumentos_subida
-from lib.cliente.mock_cliente import Cliente
+from lib.cliente import Cliente
 from lib.logger import configurar_logger
+from lib.protocolo.errores import (
+    ErrorComunicacion,
+    ErrorModoNoImplementado,
+    ErrorOperacionRemota,
+    ErrorRespuesta,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +30,25 @@ def main_subida():
     configurar_logger(args.verbose, args.quiet)
     print_debug_args(args)
 
-    Cliente(args.host, args.port, args.protocol).subir(args.src, args.name)
+    try:
+        Cliente(args.host, args.port, args.protocol).subir(args.src, args.name)
+    except ErrorModoNoImplementado as e:
+        logger.error("Modo no implementado: %s", e)
+        return 1
+    except ErrorArchivo as e:
+        logger.error("Error de archivo: %s", e)
+        return 1
+    except ErrorComunicacion as e:
+        logger.error("Error de comunicación: %s", e)
+        return 1
+    except ErrorOperacionRemota as e:
+        logger.error("Error del servidor: %s", e)
+        return 1
+    except ErrorRespuesta as e:
+        logger.error("Respuesta inesperada del servidor: %s", e)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main_subida()
+    sys.exit(main_subida())

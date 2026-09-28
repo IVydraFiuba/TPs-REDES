@@ -1,8 +1,10 @@
 import logging
+import sys
 
+from lib.archivos.errores_archivos import ErrorAlmacenamiento
 from lib.args import parsear_argumentos_servidor
 from lib.logger import configurar_logger
-from lib.servidor.mock_servidor import Server
+from lib.servidor import Servidor
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +22,19 @@ def main_servidor():
     configurar_logger(args.verbose, args.quiet)
     print_debug_args(args)
 
-    Server(args.host, args.port, args.storage).iniciar_servidor()
-
+    servidor = Servidor(args.host, args.port, args.storage)
+    try:
+        servidor.iniciar_servidor()
+    except ErrorAlmacenamiento as e:
+        logger.error("Error de almacenamiento: %s", e)
+        return 1
+    except OSError as e:
+        logger.error("Error de red: %s", e)
+        return 1
+    except KeyboardInterrupt:
+        servidor.apagar_servidor()
+    return 0
 
 
 if __name__ == "__main__":
-    main_servidor()
+    sys.exit(main_servidor())
