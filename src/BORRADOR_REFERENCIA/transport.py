@@ -2,8 +2,8 @@
 import logging
 
 from lib.constantes import PROTO_SACK, PROTO_SW
-from lib.borrador.sack import SackTransport
-from lib.borrador.stopwait import StopWaitTransport
+from borrador.sack import SackTransport
+from borrador.stopwait import StopWaitTransport
 
 logger = logging.getLogger(__name__)
 

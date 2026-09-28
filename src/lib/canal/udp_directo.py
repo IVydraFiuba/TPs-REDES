@@ -10,51 +10,58 @@ Solo debe usarse para pruebas de integración del protocolo de aplicación.
 import socket
 
 from lib.constantes import TAMANIO_MAX_DATAGRAMA, TIMEOUT_CLIENTE
-from lib.protocolo.errores import (
-    ErrorComunicacion,
-    ErrorServidorOcupado,
-    ErrorTiempoEspera,
-)
-from lib.protocolo.mensajes import codificar_mensaje, decodificar_mensaje
+from lib.protocolo.errores import ErrorComunicacion, ErrorTiempoEspera
+
+from .canal import Canal
 
 
-class CanalUdpDirecto:
-    """Canal UDP que no provee confiabilidad."""
+class CanalUdpDirecto(Canal):
+    """Canal UDP que no provee confiabilidad.
+
+    Interfaz:
+        - enviar(bytes): envía datos crudos al peer
+        - recibir() -> (bytes, direccion): recibe datos crudos del peer
+        - cerrar(): cierra el canal
+    """
 
     def __init__(self, conexion, direccion):
         self._conexion = conexion
         self._direccion = direccion
 
-    def enviar(self, tipo, carga=b""):
-        """Envía un mensaje codificado."""
+    def enviar(self, datos):
+        """Envía datos crudos al peer.
+
+        Args:
+            datos: bytes a enviar
+        """
         try:
-            self._conexion.sendto(
-                codificar_mensaje(tipo, carga),
-                self._direccion
-            )
+            self._conexion.sendto(datos, self._direccion)
         except OSError as e:
             raise ErrorComunicacion(f"Error al enviar: {e}") from e
 
-    def enviar_datagrama(self, datagrama):
-        """Envía un datagrama raw."""
-        try:
-            self._conexion.sendto(datagrama, self._direccion)
-        except OSError as e:
-            raise ErrorComunicacion(f"Error al enviar datagrama: {e}") from e
-
     def recibir(self):
-        """Recibe un mensaje. Verifica que venga del cliente esperado."""
+        """Recibe datos crudos del peer.
+
+        Returns:
+            tuple: (datos: bytes, direccion: tuple)
+
+        Raises:
+            ErrorTiempoEspera: si se agota el timeout
+            ErrorComunicacion: si hay error de red
+        """
         try:
             self._conexion.settimeout(TIMEOUT_CLIENTE)
-            datagrama, direccion = self._conexion.recvfrom(TAMANIO_MAX_DATAGRAMA)
+            datos, direccion = self._conexion.recvfrom(TAMANIO_MAX_DATAGRAMA)
         except socket.timeout:
             raise ErrorTiempoEspera("Tiempo de espera agotado")
         except OSError as e:
             raise ErrorComunicacion(f"Error al recibir: {e}") from e
 
-        if direccion != self._direccion:
-            raise ErrorServidorOcupado(
-                f"Mensaje de origen inesperado: {direccion}"
-            )
+        return datos, direccion
 
-        return decodificar_mensaje(datagrama)
+    def cerrar(self):
+        """Cierra el canal."""
+        try:
+            self._conexion.close()
+        except OSError:
+            pass

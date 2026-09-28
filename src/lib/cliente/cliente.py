@@ -6,14 +6,8 @@ import socket
 
 from lib.archivos.archivos_cliente import abrir_origen_subida, preparar_destino_descarga
 from lib.archivos.errores_archivos import ErrorArchivo
-from lib.canal.udp_directo import CanalUdpDirecto
-from lib.constantes import (
-    PROTO_DIRECTO,
-    PROTO_SACK,
-    PROTO_SW,
-    PROTOCOLS,
-    TAMANIO_BLOQUE,
-)
+from lib.canal.factory import crear_canal
+from lib.constantes import PROTO_DIRECTO, PROTOCOLS, TAMANIO_BLOQUE
 from lib.protocolo.errores import (
     ErrorComunicacion,
     ErrorModoNoImplementado,
@@ -23,6 +17,7 @@ from lib.protocolo.errores import (
 from lib.protocolo.mensajes import (
     codificar_mensaje,
     decodificar_error,
+    decodificar_mensaje,
     decodificar_respuesta_aceptada,
 )
 
@@ -62,12 +57,14 @@ class Cliente:
             )
 
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
-                canal = CanalUdpDirecto(conexion, (self._host, self._port))
+                canal = crear_canal(
+                    self._protocolo, conexion, (self._host, self._port)
+                )
 
                 solicitud = json.dumps(
                     {"nombre": nombre, "tamanio": tamanio, "modo": "directo"}
                 ).encode("utf-8")
-                canal.enviar("SOLICITUD_UPLOAD", solicitud)
+                canal.enviar(codificar_mensaje("SOLICITUD_UPLOAD", solicitud))
                 logger.debug("Solicitud enviada: %s", nombre)
 
                 self._esperar_respuesta(canal, "ACEPTADO")
@@ -78,11 +75,11 @@ class Cliente:
                     datos = lector.leer_bloque(TAMANIO_BLOQUE)
                     if not datos:
                         break
-                    canal.enviar("DATOS", datos)
+                    canal.enviar(codificar_mensaje("DATOS", datos))
                     bytes_enviados += len(datos)
 
                 logger.debug("Enviados %d bytes, enviando FIN", bytes_enviados)
-                canal.enviar("FIN")
+                canal.enviar(codificar_mensaje("FIN"))
 
                 self._esperar_respuesta(canal, "COMPLETADO")
                 logger.info(
@@ -103,13 +100,16 @@ class Cliente:
         )
 
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
-            canal = CanalUdpDirecto(conexion, (self._host, self._port))
+            canal = crear_canal(
+                self._protocolo, conexion, (self._host, self._port)
+            )
 
             solicitud = json.dumps({"nombre": nombre}).encode("utf-8")
-            canal.enviar("SOLICITUD_DESCARGA", solicitud)
+            canal.enviar(codificar_mensaje("SOLICITUD_DESCARGA", solicitud))
             logger.debug("Solicitud enviada: %s", nombre)
 
-            tipo, carga = canal.recibir()
+            tipo, carga = self._recibir_respuesta(canal)
+
             if tipo == "ERROR":
                 codigo, detalle = decodificar_error(carga)
                 logger.warning("Error del servidor: %s - %s", codigo, detalle)
@@ -126,7 +126,7 @@ class Cliente:
             with preparar_destino_descarga(destino) as escritor:
                 bytes_recibidos = 0
                 while True:
-                    tipo, datos = canal.recibir()
+                    tipo, datos = self._recibir_respuesta(canal)
 
                     if tipo == "DATOS":
                         escritor.escribir_bloque(datos)
@@ -142,7 +142,7 @@ class Cliente:
                             bytes_recibidos, tamanio
                         )
                         escritor.confirmar()
-                        canal.enviar("COMPLETADO")
+                        canal.enviar(codificar_mensaje("COMPLETADO"))
                         logger.info(
                             "Descarga completada: %s (%d bytes)",
                             nombre, bytes_recibidos
@@ -154,10 +154,19 @@ class Cliente:
                             f"Mensaje inesperado: {tipo}"
                         )
 
+    def _recibir_respuesta(self, canal):
+        """Recibe y decodifica un mensaje del canal.
+
+        Returns:
+            tuple: (tipo: str, carga: bytes)
+        """
+        datos, direccion = canal.recibir()
+        return decodificar_mensaje(datos)
+
     def _esperar_respuesta(self, canal, esperado):
         """Espera un mensaje del servidor. Maneja errores."""
         try:
-            tipo, carga = canal.recibir()
+            tipo, carga = self._recibir_respuesta(canal)
         except ErrorComunicacion as e:
             logger.error("Error de comunicación: %s", e)
             raise

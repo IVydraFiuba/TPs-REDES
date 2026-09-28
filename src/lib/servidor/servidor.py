@@ -6,8 +6,13 @@ import threading
 
 from lib.archivos.almacenamiento_servidor import AlmacenamientoServidor
 from lib.archivos.errores_archivos import ErrorArchivo
-from lib.canal.udp_directo import CanalUdpDirecto
-from lib.constantes import TAMANIO_BLOQUE, TAMANIO_MAX_DATAGRAMA, TIMEOUT_SERVIDOR
+from lib.canal.factory import crear_canal
+from lib.constantes import (
+    PROTO_DIRECTO,
+    TAMANIO_BLOQUE,
+    TAMANIO_MAX_DATAGRAMA,
+    TIMEOUT_SERVIDOR,
+)
 from lib.protocolo.errores import ErrorMensaje
 from lib.protocolo.mensajes import (
     codificar_error,
@@ -22,15 +27,16 @@ logger = logging.getLogger(__name__)
 
 
 class Servidor:
-    def __init__(self, host, port, almacenamiento, clase_canal=CanalUdpDirecto):
+    def __init__(self, host, port, almacenamiento, protocolo=PROTO_DIRECTO):
         self._host = host
         self._port = port
         self._almacenamiento = AlmacenamientoServidor(almacenamiento)
-        self._clase_canal = clase_canal
+        self._protocolo = protocolo
         self._detener = threading.Event()
         self._conexion = None
         logger.debug(
-            f"Servidor creado: {host}:{port}, storage={almacenamiento}"
+            f"Servidor creado: {host}:{port}, storage={almacenamiento}, "
+            f"protocolo={protocolo}"
         )
 
     def iniciar_servidor(self):
@@ -93,35 +99,40 @@ class Servidor:
             self._conexion.close()
             logger.info("Servidor detenido")
 
+    def _crear_canal_cliente(self, direccion):
+        """Crea un canal para comunicarse con un cliente."""
+        return crear_canal(self._protocolo, self._conexion, direccion)
+
     def _procesar_subida(self, direccion, nombre, tamanio):
         """Procesa una subida de archivo desde un cliente."""
         try:
             with self._almacenamiento.recibir_subida(nombre) as escritor:
-                canal = self._clase_canal(self._conexion, direccion)
-                canal.enviar("ACEPTADO")
+                canal = self._crear_canal_cliente(direccion)
+                canal.enviar(codificar_mensaje("ACEPTADO"))
                 logger.debug("Enviado ACEPTADO a %s", direccion)
 
                 bytes_recibidos = 0
                 while True:
-                    tipo, datos = canal.recibir()
+                    datos, _ = canal.recibir()
+                    tipo, payload = decodificar_mensaje(datos)
 
                     if tipo == "DATOS":
-                        if bytes_recibidos + len(datos) > tamanio:
+                        if bytes_recibidos + len(payload) > tamanio:
                             raise ErrorTransferenciaIncompleta(
                                 f"Exceso de datos: announced={tamanio}, "
-                                f"recibidos+actual={bytes_recibidos + len(datos)}"
+                                f"recibidos+actual={bytes_recibidos + len(payload)}"
                             )
-                        escritor.escribir_bloque(datos)
-                        bytes_recibidos += len(datos)
+                        escritor.escribir_bloque(payload)
+                        bytes_recibidos += len(payload)
 
-                    elif tipo == "FIN" and not datos:
+                    elif tipo == "FIN" and not payload:
                         if bytes_recibidos != tamanio:
                             raise ErrorTransferenciaIncompleta(
                                 f"Bytes incompletos: announced={tamanio}, "
                                 f"recibidos={bytes_recibidos}"
                             )
                         escritor.confirmar()
-                        canal.enviar("COMPLETADO")
+                        canal.enviar(codificar_mensaje("COMPLETADO"))
                         logger.info(
                             "Archivo %s recibido completo (%d bytes)",
                             nombre, bytes_recibidos
@@ -150,8 +161,11 @@ class Servidor:
         """Procesa una descarga de archivo hacia un cliente."""
         try:
             ruta, tamanio = self._almacenamiento.obtener_info_descarga(nombre)
-            canal = self._clase_canal(self._conexion, direccion)
-            canal.enviar("ACEPTADO", codificar_respuesta_aceptada(tamanio))
+            canal = self._crear_canal_cliente(direccion)
+            canal.enviar(codificar_mensaje(
+                "ACEPTADO",
+                codificar_respuesta_aceptada(tamanio)
+            ))
             logger.debug(
                 "Enviado ACEPTADO a %s: %s (%d bytes)",
                 direccion, nombre, tamanio
@@ -163,16 +177,17 @@ class Servidor:
                     datos = lector.leer_bloque(TAMANIO_BLOQUE)
                     if not datos:
                         break
-                    canal.enviar("DATOS", datos)
+                    canal.enviar(codificar_mensaje("DATOS", datos))
                     bytes_enviados += len(datos)
 
-            canal.enviar("FIN")
+            canal.enviar(codificar_mensaje("FIN"))
             logger.info(
                 "Archivo %s enviado completo (%d bytes)",
                 nombre, bytes_enviados
             )
 
-            tipo, _ = canal.recibir()
+            datos, _ = canal.recibir()
+            tipo, _ = decodificar_mensaje(datos)
             if tipo != "COMPLETADO":
                 logger.warning(
                     "Cliente %s no envió COMPLETADO, llegó: %s",

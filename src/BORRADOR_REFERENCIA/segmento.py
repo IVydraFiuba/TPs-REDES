@@ -27,7 +27,7 @@ decir, sin bloques.
 import struct
 from collections import namedtuple
 
-from lib.borrador.constants import PAYLOAD_SIZE
+from borrador.constants import PAYLOAD_SIZE
 
 DATA = 0
 ACK = 1

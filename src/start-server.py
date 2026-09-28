@@ -2,9 +2,9 @@ import logging
 import sys
 
 from lib.archivos.errores_archivos import ErrorAlmacenamiento
-from lib.args import parsear_argumentos_servidor
-from lib.logger import configurar_logger
 from lib.servidor import Servidor
+from lib.utiles.args import parsear_argumentos_servidor
+from lib.utiles.logger import configurar_logger
 
 logger = logging.getLogger(__name__)
 
