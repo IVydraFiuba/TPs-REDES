@@ -1,183 +1,71 @@
-"""Cliente UDP para subida y descarga de archivos."""
+"""Operaciones de archivo sobre mensajes de aplicación y un canal RDT."""
 
-import json
 import logging
+import secrets
 import socket
 
-from lib.archivos.archivos_cliente import abrir_origen_subida, preparar_destino_descarga
-from lib.archivos.errores_archivos import ErrorArchivo
-from lib.canal.factory import crear_canal
-from lib.constantes import PROTO_DIRECTO, PROTOCOLS, TAMANIO_BLOQUE
-from lib.protocolo.errores import (
-    ErrorComunicacion,
-    ErrorModoNoImplementado,
-    ErrorOperacionRemota,
-    ErrorRespuesta,
+from lib.cliente.manejadores import manejador_descarga, manejador_subida
+from lib.constantes import PROTO_DIRECTO, PROTOCOLS
+from lib.rdt.errores import ErrorModoNoImplementado, ErrorSegmento
+from lib.rdt.fabrica import crear_canal
+from lib.rdt.segmento import (
+    Segmento,
+    TipoSegmento,
+    codificar_segmento,
+    decodificar_segmento,
 )
-from lib.protocolo.mensajes import (
-    codificar_mensaje,
-    decodificar_error,
-    decodificar_mensaje,
-    decodificar_respuesta_aceptada,
-)
+from lib.udp import EnlaceUdp
 
 logger = logging.getLogger(__name__)
 
 
-def parsear_protocolo(protocolo_str):
-    """Convierte string de protocolo ('sw', 'sack', 'directo') a valor entero."""
-    if protocolo_str not in PROTOCOLS:
-        raise ErrorModoNoImplementado(
-            f"Protocolo desconocido: {protocolo_str}. "
-            f"Opciones: {list(PROTOCOLS.keys())}"
-        )
-    return PROTOCOLS[protocolo_str]
+def parsear_protocolo(nombre):
+    try:
+        return PROTOCOLS[nombre]
+    except KeyError as error:
+        raise ErrorModoNoImplementado(f"Protocolo desconocido: {nombre}") from error
 
 
 class Cliente:
     def __init__(self, host, port, protocolo):
-        self._host = host
-        self._port = port
+        self._direccion = (host, port)
         self._protocolo = parsear_protocolo(protocolo)
-        logger.debug(f"Cliente creado: {host}:{port}, protocolo={protocolo}")
+
+    def _abrir_canal(self, conexion):
+        if self._protocolo != PROTO_DIRECTO: # ELIMINAR ESTE IF CUANDO IMPLEMENTEMOS SW Y SACK
+            raise ErrorModoNoImplementado(
+                f"Protocolo {self._protocolo} aún no implementado")
+        
+        enlace = EnlaceUdp(conexion, self._direccion)
+        sesion = secrets.randbits(32)
+        enlace.enviar(
+            codificar_segmento(
+                Segmento(
+                    TipoSegmento.SYN, 
+                    sesion, 
+                    carga=bytes([self._protocolo])
+                    )
+                )
+            )
+        respuesta = decodificar_segmento(enlace.recibir())
+
+        if (respuesta.tipo != TipoSegmento.SYN or respuesta.sesion != sesion
+                or respuesta.carga != bytes([self._protocolo])):
+            raise ErrorSegmento("Respuesta de establecimiento inesperada")
+        return crear_canal(self._protocolo, enlace, sesion)
 
     def subir(self, origen, nombre):
-        """Sube un archivo al servidor usando el protocolo directo."""
-        if self._protocolo != PROTO_DIRECTO:
-            raise ErrorModoNoImplementado(
-                f"Protocolo {self._protocolo} no implementado. "
-                "Usar 'directo' para pruebas."
-            )
-
-        with abrir_origen_subida(origen) as lector:
-            tamanio = lector.ruta.stat().st_size
-            logger.info(
-                "Iniciando subida: %s como %s (%d bytes)",
-                origen, nombre, tamanio
-            )
-
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
-                canal = crear_canal(
-                    self._protocolo, conexion, (self._host, self._port)
-                )
-
-                solicitud = json.dumps(
-                    {"nombre": nombre, "tamanio": tamanio, "modo": "directo"}
-                ).encode("utf-8")
-                canal.enviar(codificar_mensaje("SOLICITUD_UPLOAD", solicitud))
-                logger.debug("Solicitud enviada: %s", nombre)
-
-                self._esperar_respuesta(canal, "ACEPTADO")
-                logger.debug("Servidor aceptó la solicitud")
-
-                bytes_enviados = 0
-                while True:
-                    datos = lector.leer_bloque(TAMANIO_BLOQUE)
-                    if not datos:
-                        break
-                    canal.enviar(codificar_mensaje("DATOS", datos))
-                    bytes_enviados += len(datos)
-
-                logger.debug("Enviados %d bytes, enviando FIN", bytes_enviados)
-                canal.enviar(codificar_mensaje("FIN"))
-
-                self._esperar_respuesta(canal, "COMPLETADO")
-                logger.info(
-                    "Subida completada: %s (%d bytes)", nombre, bytes_enviados
-                )
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
+            canal = self._abrir_canal(conexion)
+            try:
+                manejador_subida(canal, origen, nombre)
+            finally:
+                canal.cerrar()
 
     def descargar(self, destino, nombre):
-        """Descarga un archivo del servidor usando el protocolo directo."""
-        if self._protocolo != PROTO_DIRECTO:
-            raise ErrorModoNoImplementado(
-                f"Protocolo {self._protocolo} no implementado. "
-                "Usar 'directo' para pruebas."
-            )
-
-        logger.info(
-            "Iniciando descarga: %s -> %s",
-            nombre, destino
-        )
-
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
-            canal = crear_canal(
-                self._protocolo, conexion, (self._host, self._port)
-            )
-
-            solicitud = json.dumps({"nombre": nombre}).encode("utf-8")
-            canal.enviar(codificar_mensaje("SOLICITUD_DESCARGA", solicitud))
-            logger.debug("Solicitud enviada: %s", nombre)
-
-            tipo, carga = self._recibir_respuesta(canal)
-
-            if tipo == "ERROR":
-                codigo, detalle = decodificar_error(carga)
-                logger.warning("Error del servidor: %s - %s", codigo, detalle)
-                raise ErrorOperacionRemota(f"{codigo}: {detalle}")
-
-            if tipo != "ACEPTADO":
-                raise ErrorRespuesta(
-                    f"Respuesta inesperada: se esperaba ACEPTADO, llegó {tipo}"
-                )
-
-            tamanio = decodificar_respuesta_aceptada(carga)
-            logger.debug("Servidor aceptó, tamaño: %d bytes", tamanio)
-
-            with preparar_destino_descarga(destino) as escritor:
-                bytes_recibidos = 0
-                while True:
-                    tipo, datos = self._recibir_respuesta(canal)
-
-                    if tipo == "DATOS":
-                        escritor.escribir_bloque(datos)
-                        bytes_recibidos += len(datos)
-                        logger.debug(
-                            "Recibido bloque: %d bytes (total: %d/%d)",
-                            len(datos), bytes_recibidos, tamanio
-                        )
-
-                    elif tipo == "FIN" and not datos:
-                        logger.debug(
-                            "Descarga completada: %d/%d bytes",
-                            bytes_recibidos, tamanio
-                        )
-                        escritor.confirmar()
-                        canal.enviar(codificar_mensaje("COMPLETADO"))
-                        logger.info(
-                            "Descarga completada: %s (%d bytes)",
-                            nombre, bytes_recibidos
-                        )
-                        return
-
-                    else:
-                        raise ErrorRespuesta(
-                            f"Mensaje inesperado: {tipo}"
-                        )
-
-    def _recibir_respuesta(self, canal):
-        """Recibe y decodifica un mensaje del canal.
-
-        Returns:
-            tuple: (tipo: str, carga: bytes)
-        """
-        datos, direccion = canal.recibir()
-        return decodificar_mensaje(datos)
-
-    def _esperar_respuesta(self, canal, esperado):
-        """Espera un mensaje del servidor. Maneja errores."""
-        try:
-            tipo, carga = self._recibir_respuesta(canal)
-        except ErrorComunicacion as e:
-            logger.error("Error de comunicación: %s", e)
-            raise
-
-        if tipo == "ERROR":
-            codigo, detalle = decodificar_error(carga)
-            logger.warning("Error del servidor: %s - %s", codigo, detalle)
-            raise ErrorOperacionRemota(f"{codigo}: {detalle}")
-
-        if tipo != esperado or carga:
-            raise ErrorRespuesta(
-                f"Respuesta inesperada: se esperaba {esperado}, "
-                f"llegó {tipo}"
-            )
+            canal = self._abrir_canal(conexion)
+            try:
+                manejador_descarga(canal, destino, nombre)
+            finally:
+                canal.cerrar()

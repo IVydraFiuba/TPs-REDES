@@ -1,4 +1,4 @@
-"""Cliente de transferencia de archivos."""
+"""Cliente UDP para subida y descarga de archivos."""
 
 from .cliente import Cliente, parsear_protocolo
 

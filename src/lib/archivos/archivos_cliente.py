@@ -18,7 +18,11 @@ def abrir_origen_subida(ruta_origen):
 
 
 def preparar_destino_descarga(ruta_destino):
-    """Devuelve un escritor temporal; espera la ruta completa del archivo."""
+    """Valida el destino y devuelve un escritor para usar con `with`.
+
+    Si ruta_destino es un directorio, se debe llamar con el nombre
+    del archivo ya concatenado. Esta función solo acepta rutas a archivos.
+    """
     ruta = Path(ruta_destino)
     if not ruta.parent.is_dir() or ruta.is_dir():
         raise ErrorDirectorioDestino(
