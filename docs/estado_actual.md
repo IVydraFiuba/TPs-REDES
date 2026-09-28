@@ -1,37 +1,76 @@
-# Estado Actual del archivos src/
+# Estado Actual del Proyecto
 
-### src/download.py
+## Estructura del Proyecto
+
+```
+src/
+├── upload.py
+├── download.py
+├── start-server.py
+└── lib/
+    ├── constantes.py
+    ├── utiles/
+    │   ├── __init__.py
+    │   ├── args.py
+    │   └── logger.py
+    ├── archivos/
+    │   ├── __init__.py
+    │   ├── errores_archivos.py
+    │   ├── archivo_bloques.py
+    │   ├── almacenamiento_servidor.py
+    │   └── archivos_cliente.py
+    ├── canal/
+    │   ├── __init__.py
+    │   ├── canal.py
+    │   ├── factory.py
+    │   ├── segmento.py
+    │   ├── udp_directo.py
+    │   ├── stopwait.py
+    │   └── sack.py
+    ├── cliente/
+    │   ├── __init__.py
+    │   └── cliente.py
+    ├── protocolo/
+    │   ├── __init__.py
+    │   ├── errores.py
+    │   └── mensajes.py
+    └── servidor/
+        ├── __init__.py
+        └── servidor.py
+```
+
+---
+
+## Protocolos Implementados
+
+| Protocolo | Valor | Estado |
+|-----------|-------|--------|
+| PROTO_SW | 0 | Stub (no implementado) |
+| PROTO_SACK | 1 | Stub (no implementado) |
+| PROTO_DIRECTO | 2 | Implementado (UDP sin RDT) |
+
+---
+
+### src/lib/constantes.py
 
 ```python
-import logging
+# valores por defecto para el parseo de argumentos
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8080
+DEFAULT_SERVER_ALMACENAMIENTO = "data/servidor"
+DEFAULT_CLIENT_DIR_DESCARGAS = "data/cliente/descargas"
 
-from lib.args import parsear_argumentos_descarga
-from lib.cliente.mock_cliente import Cliente
-from lib.logger import configurar_logger
+# Protocol types
+PROTO_SW = 0
+PROTO_SACK = 1
+PROTO_DIRECTO = 2
+PROTOCOLS = {"sw": PROTO_SW, "sack": PROTO_SACK, "directo": PROTO_DIRECTO}
 
-logger = logging.getLogger(__name__)
-
-
-def print_debug_args(args):
-    logger.debug(f"Verbose: {args.verbose}")
-    logger.debug(f"Quiet: {args.quiet}")
-    logger.debug(f"Host: {args.host}")
-    logger.debug(f"Port: {args.port}")
-    logger.debug(f"FILEPATH: {args.dst}")
-    logger.debug(f"FILENAME: {args.name}")
-    logger.debug(f"Protocol: {args.protocol}")
-
-
-def main_descarga():
-    args = parsear_argumentos_descarga()
-    configurar_logger(args.verbose, args.quiet)
-    print_debug_args(args)
-
-    Cliente(args.host, args.port, args.protocol).descargar(args.dst, args.name)
-
-
-if __name__ == "__main__":
-    main_descarga()
+# Configuracion canal UDP
+TAMANIO_BLOQUE = 1024
+TAMANIO_MAX_DATAGRAMA = 1027
+TIMEOUT_CLIENTE = 5
+TIMEOUT_SERVIDOR = 0.2
 ```
 
 ---
@@ -40,22 +79,20 @@ if __name__ == "__main__":
 
 ```python
 import logging
+import sys
 
-from lib.args import parsear_argumentos_subida
-from lib.cliente.mock_cliente import Cliente
-from lib.logger import configurar_logger
+from lib.archivos.errores_archivos import ErrorArchivo
+from lib.utiles.args import parsear_argumentos_subida
+from lib.cliente import Cliente
+from lib.utiles.logger import configurar_logger
+from lib.protocolo.errores import (
+    ErrorComunicacion,
+    ErrorModoNoImplementado,
+    ErrorOperacionRemota,
+    ErrorRespuesta,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def print_debug_args(args):
-    logger.debug(f"Verbose: {args.verbose}")
-    logger.debug(f"Quiet: {args.quiet}")
-    logger.debug(f"Host: {args.host}")
-    logger.debug(f"Port: {args.port}")
-    logger.debug(f"FILEPATH: {args.src}")
-    logger.debug(f"FILENAME: {args.name}")
-    logger.debug(f"Protocol: {args.protocol}")
 
 
 def main_subida():
@@ -63,11 +100,73 @@ def main_subida():
     configurar_logger(args.verbose, args.quiet)
     print_debug_args(args)
 
-    Cliente(args.host, args.port, args.protocol).subir(args.src, args.name)
+    try:
+        Cliente(args.host, args.port, args.protocol).subir(args.src, args.name)
+    except ErrorModoNoImplementado as e:
+        logger.error("Modo no implementado: %s", e)
+        return 1
+    except ErrorArchivo as e:
+        logger.error("Error de archivo: %s", e)
+        return 1
+    except ErrorComunicacion as e:
+        logger.error("Error de comunicación: %s", e)
+        return 1
+    except ErrorOperacionRemota as e:
+        logger.error("Error del servidor: %s", e)
+        return 1
+    except ErrorRespuesta as e:
+        logger.error("Respuesta inesperada del servidor: %s", e)
+        return 1
+    return 0
+```
+
+---
+
+### src/download.py
+
+```python
+import logging
+import sys
+
+from lib.archivos.errores_archivos import ErrorArchivo
+from lib.utiles.args import parsear_argumentos_descarga
+from lib.cliente import Cliente
+from lib.utiles.logger import configurar_logger
+from lib.protocolo.errores import (
+    ErrorComunicacion,
+    ErrorModoNoImplementado,
+    ErrorOperacionRemota,
+    ErrorRespuesta,
+)
+
+logger = logging.getLogger(__name__)
 
 
-if __name__ == "__main__":
-    main_subida()
+def main_descarga():
+    args = parsear_argumentos_descarga()
+    configurar_logger(args.verbose, args.quiet)
+    print_debug_args(args)
+
+    try:
+        Cliente(args.host, args.port, args.protocol).descargar(
+            args.dst, args.name
+        )
+    except ErrorModoNoImplementado as e:
+        logger.error("Modo no implementado: %s", e)
+        return 1
+    except ErrorArchivo as e:
+        logger.error("Error de archivo: %s", e)
+        return 1
+    except ErrorComunicacion as e:
+        logger.error("Error de comunicación: %s", e)
+        return 1
+    except ErrorOperacionRemota as e:
+        logger.error("Error del servidor: %s", e)
+        return 1
+    except ErrorRespuesta as e:
+        logger.error("Respuesta inesperada del servidor: %s", e)
+        return 1
+    return 0
 ```
 
 ---
@@ -76,20 +175,14 @@ if __name__ == "__main__":
 
 ```python
 import logging
+import sys
 
-from lib.args import parsear_argumentos_servidor
-from lib.logger import configurar_logger
-from lib.servidor.mock_servidor import Server
+from lib.archivos.errores_archivos import ErrorAlmacenamiento
+from lib.utiles.args import parsear_argumentos_servidor
+from lib.utiles.logger import configurar_logger
+from lib.servidor import Servidor
 
 logger = logging.getLogger(__name__)
-
-
-def print_debug_args(args):
-    logger.debug(f"Verbose: {args.verbose}")
-    logger.debug(f"Quiet: {args.quiet}")
-    logger.debug(f"Host: {args.host}")
-    logger.debug(f"Port: {args.port}")
-    logger.debug(f"Storage: {args.storage}")
 
 
 def main_servidor():
@@ -97,16 +190,23 @@ def main_servidor():
     configurar_logger(args.verbose, args.quiet)
     print_debug_args(args)
 
-    Server(args.host, args.port, args.storage).iniciar_servidor()
-
-
-if __name__ == "__main__":
-    main_servidor()
+    servidor = Servidor(args.host, args.port, args.storage)
+    try:
+        servidor.iniciar_servidor()
+    except ErrorAlmacenamiento as e:
+        logger.error("Error de almacenamiento: %s", e)
+        return 1
+    except OSError as e:
+        logger.error("Error de red: %s", e)
+        return 1
+    except KeyboardInterrupt:
+        servidor.apagar_servidor()
+    return 0
 ```
 
 ---
 
-### src/lib/logger.py
+### src/lib/utiles/logger.py
 
 ```python
 import logging
@@ -129,7 +229,7 @@ def configurar_logger(verbose, quiet):
 
 ---
 
-### src/lib/args.py
+### src/lib/utiles/args.py
 
 ```python
 import argparse
@@ -189,11 +289,8 @@ def _agregar_argumentos_comunes(parser, is_server=False):
 
 
 def parsear_argumentos_servidor(argv=None):
-    custom_usage = "start-server [-h] [-v | -q] -H ADDR -p PORT -s DIRPATH"
     parser = argparse.ArgumentParser(
         prog="start-server",
-        usage=custom_usage,
-        description="< command description >",
         formatter_class=CustomFormatter
     )
     _agregar_argumentos_comunes(parser, is_server=True)
@@ -209,105 +306,335 @@ def parsear_argumentos_servidor(argv=None):
 
 
 def parsear_argumentos_subida(argv=None):
-    custom_usage = "upload [-h] [-v | -q] -H ADDR -p PORT -s FILEPATH -n FILENAME -r protocol"
     parser = argparse.ArgumentParser(
         prog="upload",
-        usage=custom_usage,
-        description="< command description >",
         formatter_class=CustomFormatter
     )
     _agregar_argumentos_comunes(parser)
     parser.add_argument("-s", "--src", metavar="FILEPATH", type=str, required=True)
     parser.add_argument("-n", "--name", metavar="FILENAME", type=str, required=True)
-    parser.add_argument("-r", "--protocol", metavar="protocol", choices=list(PROTOCOLS), required=True)
+    parser.add_argument(
+        "-r", "--protocol",
+        metavar="protocol",
+        choices=list(PROTOCOLS),
+        required=True
+    )
     return parser.parse_args(argv)
 
 
 def parsear_argumentos_descarga(argv=None):
-    custom_usage = "download [-h] [-v | -q] -H ADDR -p PORT -d FILEPATH -n FILENAME -r protocol"
     parser = argparse.ArgumentParser(
         prog="download",
-        usage=custom_usage,
-        description="< command description >",
         formatter_class=CustomFormatter
     )
     _agregar_argumentos_comunes(parser)
-    parser.add_argument("-d", "--dst", metavar="FILEPATH", type=str, required=False, default=DEFAULT_CLIENT_DIR_DESCARGAS)
+    parser.add_argument(
+        "-d", "--dst",
+        metavar="FILEPATH",
+        type=str,
+        required=False,
+        default=DEFAULT_CLIENT_DIR_DESCARGAS
+    )
     parser.add_argument("-n", "--name", metavar="FILENAME", type=str, required=True)
-    parser.add_argument("-r", "--protocol", metavar="protocol", choices=list(PROTOCOLS), required=True)
+    parser.add_argument(
+        "-r", "--protocol",
+        metavar="protocol",
+        choices=list(PROTOCOLS),
+        required=True
+    )
     return parser.parse_args(argv)
 ```
 
 ---
 
-### src/lib/constantes.py
+### src/lib/cliente/cliente.py
 
 ```python
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8080
-DEFAULT_SERVER_ALMACENAMIENTO = "data/servidor"
-DEFAULT_CLIENT_DIR_DESCARGAS = "data/cliente/descargas"
-PROTO_SW = 0
-PROTO_SACK = 1
-PROTOCOLS = {"sw": PROTO_SW, "sack": PROTO_SACK}
-```
+"""Cliente UDP para subida y descarga de archivos."""
 
----
-
-### src/lib/cliente/mock_cliente.py
-
-```python
+import json
 import logging
+import socket
 
-logger = logging.getLogger(__name__)
+from lib.archivos.archivos_cliente import abrir_origen_subida, preparar_destino_descarga
+from lib.archivos.errores_archivos import ErrorArchivo
+from lib.canal.factory import crear_canal
+from lib.constantes import PROTO_DIRECTO, PROTOCOLS, TAMANIO_BLOQUE
+from lib.protocolo.errores import (
+    ErrorComunicacion,
+    ErrorModoNoImplementado,
+    ErrorOperacionRemota,
+    ErrorRespuesta,
+)
+from lib.protocolo.mensajes import (
+    codificar_mensaje,
+    decodificar_error,
+    decodificar_mensaje,
+    decodificar_respuesta_aceptada,
+)
+
+
+def parsear_protocolo(protocolo_str):
+    """Convierte string de protocolo a valor entero."""
+    if protocolo_str not in PROTOCOLS:
+        raise ErrorModoNoImplementado(
+            f"Protocolo desconocido: {protocolo_str}. "
+            f"Opciones: {list(PROTOCOLS.keys())}"
+        )
+    return PROTOCOLS[protocolo_str]
 
 
 class Cliente:
-    def __init__(self, host, port, protocol):
+    def __init__(self, host, port, protocolo):
         self._host = host
         self._port = port
-        self._protocol = protocol
-        logger.debug(f"Cliente creado: {host}:{port}, protocolo={protocol}")
+        self._protocolo = parsear_protocolo(protocolo)
+        logger.debug(f"Cliente creado: {host}:{port}, protocolo={protocolo}")
 
-    def descargar(self, dst, name):
-        logger.info(f"Descargando {name} -> {dst}")
-        print(f"[MOCK] Descargando {name} a {dst}")
+    def subir(self, origen, nombre):
+        """Sube un archivo al servidor usando PROTO_DIRECTO."""
+        if self._protocolo != PROTO_DIRECTO:
+            raise ErrorModoNoImplementado(...)
+        # Usa crear_canal() para obtener el canal apropiado
+        # Envía mensajes de aplicación con codificar_mensaje()
+        # Lee respuestas con decodificar_mensaje()
 
-    def subir(self, src, name):
-        logger.info(f"Subiendo {src} como {name}")
-        print(f"[MOCK] Subiendo {src} como {name}")
+    def descargar(self, destino, nombre):
+        """Descarga un archivo del servidor usando PROTO_DIRECTO."""
+        if self._protocolo != PROTO_DIRECTO:
+            raise ErrorModoNoImplementado(...)
+        # Usa crear_canal() para obtener el canal apropiado
+        # Solicita y recibe archivo por bloques
 ```
 
 ---
 
-### src/lib/servidor/mock_servidor.py
+### src/lib/servidor/servidor.py
 
 ```python
+"""Servidor UDP para recepción de archivos."""
+
 import logging
+import socket
+import threading
 
-logger = logging.getLogger(__name__)
+from lib.archivos.almacenamiento_servidor import AlmacenamientoServidor
+from lib.archivos.errores_archivos import ErrorArchivo
+from lib.canal.factory import crear_canal
+from lib.constantes import PROTO_DIRECTO, TAMANIO_BLOQUE, TIMEOUT_SERVIDOR
+from lib.protocolo.mensajes import (
+    codificar_error,
+    codificar_mensaje,
+    codificar_respuesta_aceptada,
+    decodificar_mensaje,
+    decodificar_nombre,
+    decodificar_solicitud,
+)
 
 
-class Server:
-    def __init__(self, host, port, storage):
+class Servidor:
+    def __init__(self, host, port, almacenamiento, protocolo=PROTO_DIRECTO):
         self._host = host
         self._port = port
-        self._storage = storage
-        logger.debug(f"Server creado: {host}:{port}, storage={storage}")
+        self._almacenamiento = AlmacenamientoServidor(almacenamiento)
+        self._protocolo = protocolo
+        self._detener = threading.Event()
+        self._conexion = None
 
     def iniciar_servidor(self):
-        logger.info(f"Iniciando servidor en {self._host}:{self._port}")
-        print(f"[MOCK] Servidor escuchando en {self._host}:{self._port}")
-        print(f"[MOCK] Storage: {self._storage}")
-        try:
-            while True:
-                pass
-        except KeyboardInterrupt:
-            self.apagar_servidor()
+        """Loop principal: recibe datagramas y procesa SOLICITUD_UPLOAD o SOLICITUD_DESCARGA."""
+
+    def _crear_canal_cliente(self, direccion):
+        """Factory method para crear canal según protocolo."""
+        return crear_canal(self._protocolo, self._conexion, direccion)
+
+    def _procesar_subida(self, direccion, nombre, tamanio):
+        """Recibe archivo del cliente y lo guarda."""
+
+    def _procesar_descarga(self, direccion, nombre):
+        """Envía archivo al cliente."""
 
     def apagar_servidor(self):
-        logger.info("Apagando servidor...")
-        print("[MOCK] Servidor apagado")
+        """Detiene el servidor."""
+```
+
+---
+
+### src/lib/canal/canal.py
+
+```python
+"""Interfaz abstracta para canales de transporte."""
+
+from abc import ABC, abstractmethod
+
+
+class Canal(ABC):
+    """Contrato:
+        - enviar(bytes): envía datos al peer
+        - recibir() -> (bytes, direccion): recibe datos del peer
+        - cerrar(): cierra el canal ordenadamente
+    """
+
+    @abstractmethod
+    def enviar(self, datos):
+        pass
+
+    @abstractmethod
+    def recibir(self):
+        pass
+
+    def cerrar(self):
+        pass
+```
+
+---
+
+### src/lib/canal/segmento.py
+
+```python
+"""Formato de segmento para la capa de transporte."""
+
+import struct
+from collections import namedtuple
+
+DATA = 0
+ACK = 1
+SYN = 2
+FIN = 3
+
+_CABECERA = struct.Struct("!BIH")
+TAM_CABECERA = _CABECERA.size  # 7 bytes
+
+Segmento = namedtuple("Segmento", ["tipo", "seq", "payload"])
+MAX_PAYLOAD = 1024
+
+
+def empaquetar(tipo, seq, payload=b""):
+    """Codifica segmento: cabecera(7) + payload"""
+    return _CABECERA.pack(tipo, seq, len(payload)) + payload
+
+
+def desempaquetar(datos):
+    """Decodifica segmento a Segmento(tipo, seq, payload)"""
+```
+
+---
+
+### src/lib/canal/factory.py
+
+```python
+"""Factory para crear canales según protocolo."""
+
+from lib.constantes import PROTO_DIRECTO, PROTO_SACK, PROTO_SW
+
+
+def crear_canal(protocolo, conexion, direccion):
+    """Retorna Canal apropiado según protocolo."""
+    if protocolo == PROTO_DIRECTO:
+        from .udp_directo import CanalUdpDirecto
+        return CanalUdpDirecto(conexion, direccion)
+    if protocolo == PROTO_SW:
+        from .stopwait import CanalStopWait
+        return CanalStopWait(conexion, direccion)
+    if protocolo == PROTO_SACK:
+        from .sack import CanalSack
+        return CanalSack(conexion, direccion)
+    raise ErrorModoNoImplementado(...)
+```
+
+---
+
+### src/lib/canal/udp_directo.py
+
+```python
+"""Canal UDP directo - modo mock temporal (sin RDT)."""
+
+import socket
+
+from lib.constantes import TAMANIO_MAX_DATAGRAMA, TIMEOUT_CLIENTE
+from lib.protocolo.errores import ErrorComunicacion, ErrorTiempoEspera
+
+from .canal import Canal
+
+
+class CanalUdpDirecto(Canal):
+    """Implementación directa de UDP sin confiabilidad."""
+
+    def enviar(self, datos):
+        self._conexion.sendto(datos, self._direccion)
+
+    def recibir(self):
+        self._conexion.settimeout(TIMEOUT_CLIENTE)
+        datos, direccion = self._conexion.recvfrom(TAMANIO_MAX_DATAGRAMA)
+        return datos, direccion
+
+    def cerrar(self):
+        self._conexion.close()
+```
+
+---
+
+### src/lib/protocolo/mensajes.py
+
+```python
+"""Mensajes del protocolo de aplicación."""
+
+import json
+import struct
+
+_TIPOS = {
+    "SOLICITUD_UPLOAD": 1,
+    "ACEPTADO": 2,
+    "DATOS": 3,
+    "FIN": 4,
+    "COMPLETADO": 5,
+    "ERROR": 6,
+    "SOLICITUD_DESCARGA": 7,
+}
+
+
+def codificar_mensaje(tipo, carga=b""):
+    """Codifica mensaje con cabecera de 3 bytes (tipo:1, longitud:2)."""
+    return struct.pack("!BH", _TIPOS[tipo], len(carga)) + carga
+
+
+def decodificar_mensaje(datagrama):
+    """Decodifica mensaje. Retorna (nombre_tipo, carga)."""
+
+
+def codificar_solicitud(nombre, tamanio, modo="directo"):
+    """JSON: {"nombre": ..., "tamanio": ..., "modo": ...}"""
+
+
+def codificar_error(codigo, detalle):
+    """JSON: {"codigo": ..., "detalle": ...}"""
+
+
+def codificar_respuesta_aceptada(tamanio):
+    """JSON: {"tamanio": ...}"""
+
+
+def decodificar_respuesta_aceptada(carga):
+    """Retorna tamanio desde JSON."""
+```
+
+---
+
+### src/lib/protocolo/errores.py
+
+```python
+"""Errores del protocolo de aplicación."""
+
+
+class ErrorProtocolo(Exception): pass
+class ErrorMensaje(ErrorProtocolo): pass
+class ErrorComunicacion(ErrorProtocolo): pass
+class ErrorTiempoEspera(ErrorComunicacion): pass
+class ErrorServidorOcupado(ErrorComunicacion): pass
+class ErrorModoNoImplementado(ErrorProtocolo): pass
+class ErrorOperacionRemota(ErrorProtocolo): pass
+class ErrorRespuesta(ErrorProtocolo): pass
+class ErrorTransferenciaIncompleta(ErrorProtocolo): pass
 ```
 
 ---
@@ -315,55 +642,21 @@ class Server:
 ### src/lib/archivos/errores_archivos.py
 
 ```python
-"""Errores propios de lectura, escritura y almacenamiento."""
+"""Errores de operaciones de archivos."""
 
 
-class ErrorArchivo(Exception):
-    """Error esperable de una operación de archivos."""
-
-
-class ErrorArchivoInexistente(ErrorArchivo):
-    """El archivo solicitado no existe."""
-
-
-class ErrorArchivoExistente(ErrorArchivo):
-    """Ya hay un archivo definitivo con ese nombre."""
-
-
-class ErrorTransferenciaEnCurso(ErrorArchivo):
-    """El servidor ya está recibiendo un archivo con ese nombre."""
-
-
-class ErrorNombreArchivo(ErrorArchivo):
-    """El nombre no es un nombre de archivo permitido."""
-
-
-class ErrorTemporalExistente(ErrorArchivo):
-    """Ya existe el archivo temporal para ese destino."""
-
-
-class ErrorLecturaArchivo(ErrorArchivo):
-    """No se pudo leer el archivo."""
-
-
-class ErrorEscrituraArchivo(ErrorArchivo):
-    """No se pudo escribir o confirmar el archivo."""
-
-
-class ErrorEstadoArchivo(ErrorArchivo):
-    """Se intentó operar sobre un archivo ya cerrado."""
-
-
-class ErrorBloqueArchivo(ErrorArchivo):
-    """El tamaño o el contenido de un bloque no es válido."""
-
-
-class ErrorAlmacenamiento(ErrorArchivo):
-    """No se pudo preparar el directorio de almacenamiento."""
-
-
-class ErrorDirectorioDestino(ErrorArchivo):
-    """El directorio de destino no es válido o no existe."""
+class ErrorArchivo(Exception): pass
+class ErrorArchivoInexistente(ErrorArchivo): pass
+class ErrorArchivoExistente(ErrorArchivo): pass
+class ErrorTransferenciaEnCurso(ErrorArchivo): pass
+class ErrorNombreArchivo(ErrorArchivo): pass
+class ErrorTemporalExistente(ErrorArchivo): pass
+class ErrorLecturaArchivo(ErrorArchivo): pass
+class ErrorEscrituraArchivo(ErrorArchivo): pass
+class ErrorEstadoArchivo(ErrorArchivo): pass
+class ErrorBloqueArchivo(ErrorArchivo): pass
+class ErrorAlmacenamiento(ErrorArchivo): pass
+class ErrorDirectorioDestino(ErrorArchivo): pass
 ```
 
 ---
@@ -371,128 +664,29 @@ class ErrorDirectorioDestino(ErrorArchivo):
 ### src/lib/archivos/archivo_bloques.py
 
 ```python
-"""Lectura y escritura secuencial de archivos binarios por bloques."""
-
-import os
-from pathlib import Path
-
-from lib.archivos.errores_archivos import (
-    ErrorArchivoExistente,
-    ErrorArchivoInexistente,
-    ErrorBloqueArchivo,
-    ErrorEscrituraArchivo,
-    ErrorEstadoArchivo,
-    ErrorLecturaArchivo,
-    ErrorTemporalExistente,
-)
-
+"""Lectura/escritura secuencial de archivos por bloques."""
 
 class LectorArchivo:
-    def __init__(self, ruta):
-        self.ruta = Path(ruta)
-        if not self.ruta.is_file():
-            raise ErrorArchivoInexistente(f"No existe el archivo: {self.ruta}")
-        try:
-            self._archivo = self.ruta.open("rb")
-        except OSError as error:
-            raise ErrorLecturaArchivo(
-                f"No se pudo abrir {self.ruta}: {error}"
-            ) from error
+    """Lee archivos por bloques usando context manager."""
 
     def leer_bloque(self, tamanio):
-        if not isinstance(tamanio, int) or tamanio <= 0:
-            raise ErrorBloqueArchivo("El tamaño del bloque debe ser positivo")
-        if self._archivo.closed:
-            raise ErrorEstadoArchivo(f"El archivo está cerrado: {self.ruta}")
-        try:
-            return self._archivo.read(tamanio)
-        except OSError as error:
-            raise ErrorLecturaArchivo(
-                f"No se pudo leer {self.ruta}: {error}"
-            ) from error
+        """Retorna hasta tamanio bytes; b'' indica EOF."""
 
-    def cerrar(self):
-        try:
-            self._archivo.close()
-        except OSError as error:
-            raise ErrorLecturaArchivo(
-                f"No se pudo cerrar {self.ruta}: {error}"
-            ) from error
+    def cerrar(self): pass
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, tipo, valor, traza):
-        self.cerrar()
+    def __enter__(self): return self
+    def __exit__(self, *args): self.cerrar()
 
 
 class EscritorArchivo:
-    def __init__(self, ruta):
-        self.ruta = Path(ruta)
-        self.ruta_temporal = self.ruta.with_name(self.ruta.name + ".tmp")
-        if self.ruta.exists():
-            raise ErrorArchivoExistente(f"El archivo ya existe: {self.ruta}")
-        if self.ruta_temporal.exists():
-            raise ErrorTemporalExistente(
-                f"El temporal ya existe: {self.ruta_temporal}"
-            )
-        try:
-            self._archivo = self.ruta_temporal.open("xb")
-        except FileExistsError as error:
-            raise ErrorTemporalExistente(
-                f"El temporal ya existe: {self.ruta_temporal}"
-            ) from error
-        except OSError as error:
-            raise ErrorEscrituraArchivo(
-                f"No se pudo crear {self.ruta_temporal}: {error}"
-            ) from error
-        self._terminado = False
+    """Escribe a .tmp, confirma o cancela al cerrar."""
 
-    def escribir_bloque(self, datos):
-        if self._terminado:
-            raise ErrorEstadoArchivo("La escritura ya terminó")
-        if not isinstance(datos, bytes):
-            raise ErrorBloqueArchivo("El bloque debe ser de tipo bytes")
-        try:
-            return self._archivo.write(datos)
-        except OSError as error:
-            raise ErrorEscrituraArchivo(
-                f"No se pudo escribir {self.ruta_temporal}: {error}"
-            ) from error
+    def escribir_bloque(self, datos): pass
+    def confirmar(self): pass  # Renombra .tmp -> definitivo
+    def cancelar(self): pass     # Elimina .tmp
 
-    def confirmar(self):
-        if self._terminado:
-            raise ErrorEstadoArchivo("La escritura ya terminó")
-        try:
-            self._archivo.close()
-            os.link(self.ruta_temporal, self.ruta)
-            self.ruta_temporal.unlink()
-        except FileExistsError as error:
-            raise ErrorArchivoExistente(
-                f"El archivo ya existe: {self.ruta}"
-            ) from error
-        except OSError as error:
-            raise ErrorEscrituraArchivo(
-                f"No se pudo confirmar {self.ruta}: {error}"
-            ) from error
-        self._terminado = True
-
-    def cancelar(self):
-        if self._terminado:
-            return
-        try:
-            self._archivo.close()
-            self.ruta_temporal.unlink(missing_ok=True)
-        except OSError as error:
-            raise ErrorEscrituraArchivo(
-                f"No se pudo cancelar {self.ruta_temporal}: {error}"
-            ) from error
-        self._terminado = True
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, tipo, valor, traza):
+    def __enter__(self): return self
+    def __exit__(self, *args):
         if not self._terminado:
             self.cancelar()
 ```
@@ -502,77 +696,21 @@ class EscritorArchivo:
 ### src/lib/archivos/almacenamiento_servidor.py
 
 ```python
-"""Reglas del servidor para nombres y subidas, sin lógica de red."""
-
-import threading
-from contextlib import contextmanager
-from pathlib import Path
-
-from lib.archivos.archivo_bloques import EscritorArchivo, LectorArchivo
-from lib.archivos.errores_archivos import (
-    ErrorAlmacenamiento,
-    ErrorArchivoExistente,
-    ErrorNombreArchivo,
-    ErrorTransferenciaEnCurso,
-)
+"""Gestión de archivos en el servidor."""
 
 
 class AlmacenamientoServidor:
-    def __init__(self, directorio):
-        self._directorio = Path(directorio)
-        try:
-            self._directorio.mkdir(parents=True, exist_ok=True)
-        except OSError as error:
-            raise ErrorAlmacenamiento(
-                f"No se pudo preparar {self._directorio}: {error}"
-            ) from error
-        if not self._directorio.is_dir():
-            raise ErrorAlmacenamiento(
-                f"No es un directorio: {self._directorio}"
-            )
-        self._cerrojo = threading.Lock()
-        self._subidas_activas = set()
-
-    def _ruta(self, nombre):
-        if (
-            not isinstance(nombre, str)
-            or not nombre
-            or nombre in (".", "..")
-            or "/" in nombre
-            or "\\" in nombre
-            or "\x00" in nombre
-            or nombre.endswith(".tmp")
-        ):
-            raise ErrorNombreArchivo(
-                f"Nombre de archivo inválido: {nombre!r}"
-            )
-        ruta = self._directorio / nombre
-        if ruta.is_symlink():
-            raise ErrorNombreArchivo(f"No se aceptan enlaces: {nombre}")
-        return ruta
+    """Thread-safe con cerrojo y conjunto de subidas activas."""
 
     def abrir_descarga(self, nombre):
-        return LectorArchivo(self._ruta(nombre))
+        """Retorna LectorArchivo para el nombre."""
+
+    def obtener_info_descarga(self, nombre):
+        """Retorna (ruta, tamanio). Lanza ErrorArchivoInexistente si no existe."""
 
     @contextmanager
     def recibir_subida(self, nombre):
-        ruta = self._ruta(nombre)
-        with self._cerrojo:
-            if nombre in self._subidas_activas:
-                raise ErrorTransferenciaEnCurso(
-                    f"Ya se está subiendo el archivo: {nombre}"
-                )
-            if ruta.exists():
-                raise ErrorArchivoExistente(
-                    f"El archivo ya existe: {nombre}"
-                )
-            self._subidas_activas.add(nombre)
-        try:
-            with EscritorArchivo(ruta) as escritor:
-                yield escritor
-        finally:
-            with self._cerrojo:
-                self._subidas_activas.remove(nombre)
+        """Reserva nombre, retorna EscritorArchivo. Cancela si sale sin confirmar."""
 ```
 
 ---
@@ -580,31 +718,67 @@ class AlmacenamientoServidor:
 ### src/lib/archivos/archivos_cliente.py
 
 ```python
-"""Validaciones locales del cliente para subir y descargar archivos."""
-
-from pathlib import Path
-
-from lib.archivos.archivo_bloques import EscritorArchivo, LectorArchivo
-from lib.archivos.errores_archivos import (
-    ErrorDirectorioDestino,
-    ErrorNombreArchivo,
-)
+"""Validaciones del cliente para subir/descargar."""
 
 
 def abrir_origen_subida(ruta_origen):
-    ruta = Path(ruta_origen)
-    if ruta.suffix == ".tmp":
-        raise ErrorNombreArchivo(f"No se puede subir un temporal: {ruta}")
-    return LectorArchivo(ruta)
+    """Valida y retorna LectorArchivo. Rechaza archivos .tmp."""
 
 
 def preparar_destino_descarga(ruta_destino):
-    ruta = Path(ruta_destino)
-    if not ruta.parent.is_dir() or ruta.is_dir():
-        raise ErrorDirectorioDestino(
-            f"El destino debe ser un archivo dentro de un directorio: {ruta}"
-        )
-    return EscritorArchivo(ruta)
+    """Valida y retorna EscritorArchivo. El destino debe ser archivo en directorio existente."""
+```
+
+---
+
+## Capas del Sistema
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Aplicación (Cliente / Servidor)                          │
+│  - Mensajes: SOLICITUD_UPLOAD, ACEPTADO, DATOS, FIN...  │
+│  - Usa: codificar_mensaje(), decodificar_mensaje()      │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Transporte (Canal) - ABC                                 │
+│  - Interfaz: enviar(bytes), recibir() -> (bytes, addr)  │
+│  - Implementaciones: UDP Directo, Stop&Wait, SACK        │
+│  - Usa: crear_canal() factory                           │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Red (socket UDP)                                        │
+│  - Datagramas planos                                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Protocolo de Aplicación
+
+### Upload
+
+```
+Cliente                              Servidor
+SOLICITUD_UPLOAD(nombre, tamaño) -> reserva nombre
+                             <- ACEPTADO
+DATOS(bytes)                 -> escribe bloque
+DATOS(bytes)                 -> escribe bloque
+FIN                          -> comprueba, confirma
+                             <- COMPLETADO
+```
+
+### Download
+
+```
+Cliente                              Servidor
+SOLICITUD_DESCARGA(nombre)    ->
+                             <- ACEPTADO(tamaño)
+                       DATOS(bytes) ->
+                       DATOS(bytes) ->
+                       FIN           ->
+COMPLETADO                ->
 ```
 
 ---
