@@ -1,5 +1,3 @@
-import pytest
-
 from lib.archivos.errores_archivos import (
     ErrorAlmacenamiento,
     ErrorArchivo,

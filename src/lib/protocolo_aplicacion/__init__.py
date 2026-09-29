@@ -1,5 +1,6 @@
 """Capa de protocolo de aplicación."""
 
+from .comunicador import ComunicadorAplicacion
 from .codificacion import (
     aceptado,
     codificar_mensaje,
@@ -12,11 +13,17 @@ from .codificacion import (
     solicitud_descarga,
     solicitud_subida,
 )
-from .errores import ErrorMensaje, ErrorRespuesta, ErrorTransferenciaIncompleta, ErrorOperacionRemota
+from .errores import (
+    ErrorMensaje,
+    ErrorOperacionRemota,
+    ErrorRespuesta,
+    ErrorTransferenciaIncompleta,
+)
 from .mensaje import Mensaje, TipoMensaje
 
 __all__ = [
     "Mensaje",
+    "ComunicadorAplicacion",
     "TipoMensaje",
     "codificar_mensaje",
     "decodificar_mensaje",

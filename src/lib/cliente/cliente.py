@@ -5,6 +5,7 @@ import socket
 
 from lib.cliente.manejadores import manejador_descarga, manejador_subida
 from lib.constantes import PROTO_DIRECTO, PROTOCOLS
+from lib.protocolo_aplicacion import ComunicadorAplicacion
 from lib.rdt.errores import ErrorModoNoImplementado
 from lib.rdt.establecimiento import solicitar_sesion
 from lib.rdt.fabrica import crear_canal
@@ -41,7 +42,9 @@ class Cliente:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
             canal = self._abrir_canal(conexion)
             try:
-                manejador_subida(canal, origen, nombre)
+                manejador_subida(
+                    ComunicadorAplicacion(canal), origen, nombre
+                )
             finally:
                 canal.cerrar()
 
@@ -49,6 +52,8 @@ class Cliente:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as conexion:
             canal = self._abrir_canal(conexion)
             try:
-                manejador_descarga(canal, destino, nombre)
+                manejador_descarga(
+                    ComunicadorAplicacion(canal), destino, nombre
+                )
             finally:
                 canal.cerrar()

@@ -13,7 +13,7 @@ from lib.archivos.errores_archivos import (
 class TestAlmacenamientoServidor:
     def test_crear_directorio_si_no_existe(self, tmp_path):
         directorio = tmp_path / "nuevo_directorio"
-        almacenamiento = AlmacenamientoServidor(directorio)
+        AlmacenamientoServidor(directorio)
         assert directorio.is_dir()
 
     def test_directorio_invalido_lanza_error(self, tmp_path):
@@ -23,7 +23,7 @@ class TestAlmacenamientoServidor:
             AlmacenamientoServidor(archivo)
 
     def test_directorio_existente_funciona(self, tmp_path):
-        almacenamiento = AlmacenamientoServidor(tmp_path)
+        AlmacenamientoServidor(tmp_path)
         assert tmp_path.is_dir()
 
     def test_abrir_descarga_archivo_existente(self, tmp_path):
@@ -97,7 +97,7 @@ class TestAlmacenamientoServidor:
 
         almacenamiento = AlmacenamientoServidor(tmp_path)
         with pytest.raises(ErrorArchivoExistente):
-            with almacenamiento.recibir_subida("existe.txt") as escritor:
+            with almacenamiento.recibir_subida("existe.txt"):
                 pass
 
     def test_dos_subidas_mismo_nombre_lanza_error(self, tmp_path):
@@ -105,5 +105,5 @@ class TestAlmacenamientoServidor:
 
         with almacenamiento.recibir_subida("archivo.txt"):
             with pytest.raises(ErrorTransferenciaEnCurso):
-                with almacenamiento.recibir_subida("archivo.txt") as escritor:
+                with almacenamiento.recibir_subida("archivo.txt"):
                     pass

@@ -1,9 +1,15 @@
 import pytest
 
-from lib.args import (
+from lib.constantes import (
+    DEFAULT_CLIENT_DIR_DESCARGAS,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_SERVER_ALMACENAMIENTO,
+)
+from lib.utiles.args import (
+    parsear_argumentos_descarga,
     parsear_argumentos_servidor,
     parsear_argumentos_subida,
-    parsear_argumentos_descarga,
 )
 
 
@@ -38,21 +44,12 @@ class TestParsearArgumentosServidor:
                     "-s", "./storage", "-v", "-q"]
             parsear_argumentos_servidor(args)
 
-    def test_falta_host_falla(self):
-        with pytest.raises(SystemExit):
-            parsear_argumentos_servidor(["-p", "8080", "-s", "./storage"])
+    def test_argumentos_por_defecto(self):
+        args = parsear_argumentos_servidor([])
 
-    def test_falta_port_falla(self):
-        with pytest.raises(SystemExit):
-            parsear_argumentos_servidor(
-                ["-H", "127.0.0.1", "-s", "./storage"]
-            )
-
-    def test_falta_storage_falla(self):
-        with pytest.raises(SystemExit):
-            parsear_argumentos_servidor(
-                ["-H", "127.0.0.1", "-p", "8080"]
-            )
+        assert args.host == DEFAULT_HOST
+        assert args.port == DEFAULT_PORT
+        assert args.storage == DEFAULT_SERVER_ALMACENAMIENTO
 
 
 class TestParsearArgumentosSubida:
@@ -145,12 +142,12 @@ class TestParsearArgumentosDescarga:
                     "-n", "archivo.txt", "-r", "sw", "-v", "-q"]
             parsear_argumentos_descarga(args)
 
-    def test_falta_dst_falla(self):
-        with pytest.raises(SystemExit):
-            parsear_argumentos_descarga(
-                ["-H", "127.0.0.1", "-p", "8080",
-                 "-n", "archivo.txt", "-r", "sw"]
-            )
+    def test_destino_por_defecto(self):
+        args = parsear_argumentos_descarga(
+            ["-n", "archivo.txt", "-r", "sw"]
+        )
+
+        assert args.dst == DEFAULT_CLIENT_DIR_DESCARGAS
 
     def test_falta_name_falla(self):
         with pytest.raises(SystemExit):

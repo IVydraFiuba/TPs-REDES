@@ -12,7 +12,8 @@ _CABECERA = struct.Struct("!BH")
 
 
 def codificar_mensaje(mensaje):
-    if not isinstance(mensaje, Mensaje) or not isinstance(mensaje.tipo, TipoMensaje):
+    if (not isinstance(mensaje, Mensaje)
+            or not isinstance(mensaje.tipo, TipoMensaje)):
         raise ErrorMensaje("Mensaje inválido")
     if not isinstance(mensaje.carga, bytes):
         raise ErrorMensaje("La carga debe ser bytes")
@@ -26,7 +27,9 @@ def decodificar_mensaje(datos):
         raise ErrorMensaje("Tamaño de mensaje inválido")
     tipo, longitud = _CABECERA.unpack_from(datos)
     if len(datos) != _CABECERA.size + longitud:
-        raise ErrorMensaje("La longitud del mensaje no coincide con la cabecera")
+        raise ErrorMensaje(
+            "La longitud del mensaje no coincide con la cabecera"
+        )
     try:
         return Mensaje(TipoMensaje(tipo), datos[_CABECERA.size:])
     except ValueError as error:
@@ -72,7 +75,10 @@ def leer_solicitud_subida(mensaje):
 
 
 def solicitud_descarga(nombre):
-    return Mensaje(TipoMensaje.SOLICITUD_DESCARGA, _codificar_json({"nombre": nombre}))
+    return Mensaje(
+        TipoMensaje.SOLICITUD_DESCARGA,
+        _codificar_json({"nombre": nombre}),
+    )
 
 
 def leer_solicitud_descarga(mensaje):
@@ -80,8 +86,8 @@ def leer_solicitud_descarga(mensaje):
 
 
 def aceptado(tamanio=None):
-    return Mensaje(TipoMensaje.ACEPTADO,
-                   b"" if tamanio is None else _codificar_json({"tamanio": tamanio}))
+    carga = b"" if tamanio is None else _codificar_json({"tamanio": tamanio})
+    return Mensaje(TipoMensaje.ACEPTADO, carga)
 
 
 def leer_tamanio_aceptado(mensaje):

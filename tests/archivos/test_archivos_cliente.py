@@ -1,6 +1,9 @@
 import pytest
 
-from lib.archivos.archivos_cliente import abrir_origen_subida, preparar_destino_descarga
+from lib.archivos.archivos_cliente import (
+    abrir_origen_subida,
+    preparar_destino_descarga,
+)
 from lib.archivos.errores_archivos import (
     ErrorArchivoInexistente,
     ErrorDirectorioDestino,
@@ -35,8 +38,8 @@ class TestPrepararDestinoDescarga:
         directorio.mkdir()
         destino = directorio / "nuevo.txt"
 
-        escritor = preparar_destino_descarga(destino)
-        assert destino.exists() is False
+        with preparar_destino_descarga(destino):
+            assert destino.exists() is False
 
     def test_destino_en_directorio_inexistente(self, tmp_path):
         destino = tmp_path / "no_existe" / "archivo.txt"
