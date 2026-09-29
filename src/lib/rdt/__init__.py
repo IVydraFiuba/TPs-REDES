@@ -3,6 +3,11 @@
 from .canal import Canal
 from .implementaciones.directo import CanalDirecto
 from .errores import ErrorModoNoImplementado, ErrorSegmento
+from .establecimiento import (
+    codificar_syn,
+    leer_solicitud_sesion,
+    solicitar_sesion,
+)
 from .fabrica import crear_canal
 from .segmento import (
     Segmento,
@@ -19,6 +24,9 @@ __all__ = [
     "codificar_segmento",
     "decodificar_segmento",
     "crear_canal",
+    "codificar_syn",
+    "leer_solicitud_sesion",
+    "solicitar_sesion",
     "ErrorSegmento",
     "ErrorModoNoImplementado",
 ]

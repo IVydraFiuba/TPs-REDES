@@ -6,7 +6,7 @@ from .errores import ErrorModoNoImplementado
 from .implementaciones.directo import CanalDirecto
 
 
-def crear_canal(protocolo, enlace, sesion):
+def crear_canal(protocolo, enlace):
     if protocolo == PROTO_DIRECTO:
-        return CanalDirecto(enlace, sesion)
+        return CanalDirecto(enlace)
     raise ErrorModoNoImplementado(f"Protocolo {protocolo} aún no implementado")
