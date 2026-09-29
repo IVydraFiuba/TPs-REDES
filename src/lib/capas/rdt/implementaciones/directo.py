@@ -1,8 +1,8 @@
 """Canal sin recuperación de pérdidas, con encapsulación de segmentos."""
 
-from lib.rdt.canal import Canal
-from lib.rdt.errores import ErrorSegmento
-from lib.rdt.segmento import (
+from ..canal import Canal
+from ..errores import ErrorSegmento
+from ..segmento import (
     Segmento,
     TipoSegmento,
     codificar_segmento,

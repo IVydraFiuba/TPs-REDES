@@ -2,13 +2,13 @@
 
 import logging
 
-from lib.constantes import TAMANIO_BLOQUE
-from lib.protocolo_aplicacion import (
+from lib.capas.pca import (
     ErrorRespuesta,
     Mensaje,
     TipoMensaje,
     aceptado,
 )
+from lib.constantes import TAMANIO_BLOQUE
 
 logger = logging.getLogger(__name__)
 

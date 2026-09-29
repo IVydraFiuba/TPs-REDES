@@ -6,13 +6,13 @@ from lib.constantes import (
     TAMANIO_MAX_CARGA_SEGMENTO,
     TAMANIO_MAX_DATAGRAMA,
 )
-from lib.rdt.errores import ErrorSegmento
-from lib.rdt.establecimiento import (
+from lib.capas.rdt.errores import ErrorSegmento
+from lib.capas.rdt.establecimiento import (
     codificar_syn,
     leer_solicitud_sesion,
     solicitar_sesion,
 )
-from lib.rdt.segmento import (
+from lib.capas.rdt.segmento import (
     Segmento,
     TipoSegmento,
     codificar_segmento,

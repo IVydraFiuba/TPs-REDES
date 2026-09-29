@@ -2,8 +2,8 @@ import queue
 import threading
 
 from lib.archivos.almacenamiento_servidor import AlmacenamientoServidor
+from lib.capas.pca import ComunicadorAplicacion
 from lib.cliente.manejadores import manejador_descarga, manejador_subida
-from lib.protocolo_aplicacion import ComunicadorAplicacion
 from lib.servidor.sesion import SesionServidor
 
 

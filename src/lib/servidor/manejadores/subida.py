@@ -2,7 +2,7 @@
 
 import logging
 
-from lib.protocolo_aplicacion import (
+from lib.capas.pca import (
     ErrorRespuesta,
     ErrorTransferenciaIncompleta,
     Mensaje,

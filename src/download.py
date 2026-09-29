@@ -3,10 +3,10 @@ import sys
 from pathlib import Path
 
 from lib.archivos.errores_archivos import ErrorArchivo
+from lib.capas.pca.errores import ErrorMensaje, ErrorOperacionRemota
+from lib.capas.rdt.errores import ErrorModoNoImplementado, ErrorSegmento
+from lib.capas.udp.errores import ErrorComunicacion
 from lib.cliente import Cliente
-from lib.protocolo_aplicacion.errores import ErrorMensaje, ErrorOperacionRemota
-from lib.rdt.errores import ErrorModoNoImplementado, ErrorSegmento
-from lib.udp.errores import ErrorComunicacion
 from lib.utiles.args import parsear_argumentos_descarga
 from lib.utiles.logger import configurar_logger
 

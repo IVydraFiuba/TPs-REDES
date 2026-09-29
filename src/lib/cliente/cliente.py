@@ -4,12 +4,12 @@ import logging
 import socket
 
 from lib.cliente.manejadores import manejador_descarga, manejador_subida
-from lib.constantes import PROTO_DIRECTO, PROTOCOLS
-from lib.protocolo_aplicacion import ComunicadorAplicacion
-from lib.rdt.errores import ErrorModoNoImplementado
-from lib.rdt.establecimiento import solicitar_sesion
-from lib.rdt.fabrica import crear_canal
-from lib.udp import EnlaceClienteUdp
+from lib.capas.pca import ComunicadorAplicacion
+from lib.capas.rdt.errores import ErrorModoNoImplementado
+from lib.capas.rdt.establecimiento import solicitar_sesion
+from lib.capas.rdt.fabrica import crear_canal, validar_modo
+from lib.capas.udp import EnlaceClienteUdp
+from lib.constantes import PROTOCOLS
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,7 @@ class Cliente:
         self._protocolo = parsear_protocolo(protocolo)
 
     def _abrir_canal(self, conexion):
-        # Eliminar esta validación al implementar Stop-and-Wait y SACK.
-        if self._protocolo != PROTO_DIRECTO:
-            raise ErrorModoNoImplementado(
-                f"Protocolo {self._protocolo} aún no implementado")
-
+        validar_modo(self._protocolo)
         enlace = EnlaceClienteUdp(conexion, self._direccion)
         solicitar_sesion(enlace, self._protocolo)
         return crear_canal(self._protocolo, enlace)

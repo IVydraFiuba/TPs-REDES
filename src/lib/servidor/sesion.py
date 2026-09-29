@@ -3,7 +3,7 @@
 import logging
 
 from lib.archivos.errores_archivos import ErrorArchivo
-from lib.protocolo_aplicacion import (
+from lib.capas.pca import (
     ComunicadorAplicacion,
     ErrorMensaje,
     ErrorRespuesta,
@@ -12,8 +12,8 @@ from lib.protocolo_aplicacion import (
     leer_solicitud_descarga,
     leer_solicitud_subida,
 )
-from lib.rdt.errores import ErrorSegmento
-from lib.udp.errores import ErrorComunicacion
+from lib.capas.rdt.errores import ErrorSegmento
+from lib.capas.udp.errores import ErrorComunicacion
 
 from .manejadores import manejador_descarga, manejador_subida
 

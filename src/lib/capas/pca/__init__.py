@@ -1,4 +1,4 @@
-"""Capa de protocolo de aplicación."""
+"""Capa de protocolo de aplicación (PCA)."""
 
 from .comunicador import ComunicadorAplicacion
 from .codificacion import (

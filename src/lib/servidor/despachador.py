@@ -4,19 +4,18 @@ import logging
 import socket
 import threading
 
+from lib.capas.rdt.errores import ErrorModoNoImplementado, ErrorSegmento
+from lib.capas.rdt.establecimiento import codificar_syn, leer_solicitud_sesion
+from lib.capas.rdt.fabrica import crear_canal, validar_modo
+from lib.capas.rdt.segmento import TipoSegmento, decodificar_segmento
+from lib.capas.udp import EnlaceSesionUdp
+from lib.capas.udp.errores import ErrorComunicacion
 from lib.constantes import (
-    CAPACIDAD_COLA_DIRECTO,
+    CAPACIDAD_COLA_SESION,
     MAXIMO_SESIONES,
-    PROTO_DIRECTO,
     TAMANIO_MAX_DATAGRAMA,
-    TIMEOUT_SERVIDOR,
+    TIMEOUT_DESPACHADOR,
 )
-from lib.rdt.errores import ErrorModoNoImplementado, ErrorSegmento
-from lib.rdt.establecimiento import codificar_syn, leer_solicitud_sesion
-from lib.rdt.fabrica import crear_canal
-from lib.rdt.segmento import TipoSegmento, decodificar_segmento
-from lib.udp import EnlaceSesionUdp
-from lib.udp.errores import ErrorComunicacion
 
 from .registro_sesiones import EntradaSesion, RegistroSesiones
 from .sesion import SesionServidor
@@ -33,7 +32,7 @@ class Despachador:
         self._registro = RegistroSesiones(maximo_sesiones)
 
     def ejecutar(self):
-        self._conexion.settimeout(TIMEOUT_SERVIDOR)
+        self._conexion.settimeout(TIMEOUT_DESPACHADOR)
         try:
             while not self._detener.is_set():
                 try:
@@ -77,15 +76,12 @@ class Despachador:
                 entrada.enlace.enviar(entrada.respuesta_syn)
             return
 
-        if protocolo != PROTO_DIRECTO:
-            raise ErrorModoNoImplementado(
-                f"Protocolo {protocolo} aún no implementado"
-            )
+        validar_modo(protocolo)
 
         enlace = EnlaceSesionUdp(
             self._conexion,
             direccion,
-            capacidad=CAPACIDAD_COLA_DIRECTO,
+            capacidad=CAPACIDAD_COLA_SESION,
         )
         respuesta = codificar_syn(protocolo)
         entrada = EntradaSesion(protocolo, enlace, respuesta)

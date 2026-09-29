@@ -3,7 +3,7 @@
 import logging
 
 from lib.archivos.archivos_cliente import preparar_destino_descarga
-from lib.protocolo_aplicacion import (
+from lib.capas.pca import (
     ErrorRespuesta,
     ErrorTransferenciaIncompleta,
     Mensaje,

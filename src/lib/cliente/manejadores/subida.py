@@ -3,8 +3,8 @@
 import logging
 
 from lib.archivos.archivos_cliente import abrir_origen_subida
+from lib.capas.pca import Mensaje, TipoMensaje, solicitud_subida
 from lib.constantes import TAMANIO_BLOQUE
-from lib.protocolo_aplicacion import Mensaje, TipoMensaje, solicitud_subida
 
 logger = logging.getLogger(__name__)
 

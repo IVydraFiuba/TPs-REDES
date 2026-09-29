@@ -1,7 +1,7 @@
 import pytest
 
-from lib.udp.errores import ErrorComunicacion
-from lib.udp.sesion import EnlaceSesionUdp
+from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
+from lib.capas.udp.sesion import EnlaceSesionUdp
 
 
 class SocketFalso:
@@ -52,3 +52,12 @@ def test_interrumpir_impide_recibir_enviar_y_entregar():
         enlace.enviar(b"datagrama")
     with pytest.raises(ErrorComunicacion):
         enlace.recibir()
+
+
+def test_permite_definir_un_timeout_por_recepcion():
+    enlace = EnlaceSesionUdp(
+        SocketFalso(), ("127.0.0.1", 9000), capacidad=1
+    )
+
+    with pytest.raises(ErrorTiempoEspera):
+        enlace.recibir(timeout=0.001)

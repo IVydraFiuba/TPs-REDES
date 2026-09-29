@@ -4,7 +4,11 @@ import queue
 import threading
 import time
 
-from lib.constantes import TAMANIO_MAX_DATAGRAMA, TIMEOUT_CLIENTE
+from lib.constantes import (
+    TAMANIO_MAX_DATAGRAMA,
+    TIMEOUT_DESPACHADOR,
+    TIMEOUT_INACTIVIDAD_SESION,
+)
 
 from .enlace import Enlace
 from .errores import ErrorComunicacion, ErrorTiempoEspera
@@ -37,14 +41,18 @@ class EnlaceSesionUdp(Enlace):
         except OSError as error:
             raise ErrorComunicacion(f"Error al enviar: {error}") from error
 
-    def recibir(self) -> bytes:
-        limite = time.monotonic() + TIMEOUT_CLIENTE
+    def recibir(self, timeout=None) -> bytes:
+        if timeout is None:
+            timeout = TIMEOUT_INACTIVIDAD_SESION
+        limite = time.monotonic() + timeout
         while not self._interrumpido.is_set():
             restante = limite - time.monotonic()
             if restante <= 0:
                 raise ErrorTiempoEspera("Tiempo de espera agotado")
             try:
-                return self._entrada.get(timeout=min(restante, 0.2))
+                return self._entrada.get(
+                    timeout=min(restante, TIMEOUT_DESPACHADOR)
+                )
             except queue.Empty:
                 continue
         raise ErrorComunicacion("Sesión interrumpida")

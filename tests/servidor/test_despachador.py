@@ -1,8 +1,8 @@
 import threading
 
 from lib.constantes import PROTO_DIRECTO
-from lib.rdt.establecimiento import codificar_syn
-from lib.rdt.segmento import (
+from lib.capas.rdt.establecimiento import codificar_syn
+from lib.capas.rdt.segmento import (
     Segmento,
     TipoSegmento,
     codificar_segmento,
@@ -12,7 +12,7 @@ from lib.servidor.registro_sesiones import (
     EntradaSesion,
     RegistroSesiones,
 )
-from lib.udp.sesion import EnlaceSesionUdp
+from lib.capas.udp.sesion import EnlaceSesionUdp
 
 
 class SocketFalso:

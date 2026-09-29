@@ -1,6 +1,6 @@
 import pytest
 
-from lib.protocolo_aplicacion import (
+from lib.capas.pca import (
     ComunicadorAplicacion,
     ErrorOperacionRemota,
     ErrorRespuesta,

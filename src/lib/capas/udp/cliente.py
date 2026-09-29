@@ -6,7 +6,7 @@ import time
 from lib.constantes import (
     TAMANIO_BUFFER_RECEPCION_UDP,
     TAMANIO_MAX_DATAGRAMA,
-    TIMEOUT_CLIENTE,
+    TIMEOUT_INACTIVIDAD_SESION,
 )
 
 from .enlace import Enlace
@@ -39,19 +39,23 @@ class EnlaceClienteUdp(Enlace):
         except OSError as error:
             raise ErrorComunicacion(f"Error al enviar: {error}") from error
 
-    def recibir(self) -> bytes:
-        limite = time.monotonic() + TIMEOUT_CLIENTE
+    def recibir(self, timeout=None) -> bytes:
+        if timeout is None:
+            timeout = TIMEOUT_INACTIVIDAD_SESION
+        limite = time.monotonic() + timeout
         while True:
             restante = limite - time.monotonic()
             if restante <= 0:
                 raise ErrorTiempoEspera("Tiempo de espera agotado")
             try:
-                self._conexion.settimeout(min(restante, 0.2))
+                self._conexion.settimeout(restante)
                 datos, direccion = self._conexion.recvfrom(
                     TAMANIO_MAX_DATAGRAMA + 1
                 )
-            except socket.timeout:
-                continue
+            except socket.timeout as error:
+                raise ErrorTiempoEspera(
+                    "Tiempo de espera agotado"
+                ) from error
             except OSError as error:
                 raise ErrorComunicacion(
                     f"Error al recibir: {error}"
