@@ -1,8 +1,13 @@
 """Comunica mensajes de aplicación sobre un canal RDT de bytes."""
 
+import logging
+import threading
+
 from .codificacion import codificar_mensaje, decodificar_mensaje, leer_error
 from .errores import ErrorOperacionRemota, ErrorRespuesta
 from .mensaje import TipoMensaje
+
+logger = logging.getLogger(__name__)
 
 
 class ComunicadorAplicacion:
@@ -10,9 +15,18 @@ class ComunicadorAplicacion:
         self._canal = canal
 
     def enviar(self, mensaje):
+        logger.debug(
+            "[%s] Enviando mensaje PCA: %s",
+            threading.current_thread().name,
+            mensaje.tipo.name if hasattr(mensaje, 'tipo') else type(mensaje).__name__
+        )
         self._canal.enviar(codificar_mensaje(mensaje))
 
     def recibir(self):
+        logger.debug(
+            "[%s] Recibiendo mensaje PCA",
+            threading.current_thread().name
+        )
         return decodificar_mensaje(self._canal.recibir())
 
     def recibir_respuesta(self):

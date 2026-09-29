@@ -1,7 +1,10 @@
 """Registro de sesiones activas identificadas por el endpoint del cliente."""
 
+import logging
 import threading
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -29,11 +32,15 @@ class RegistroSesiones:
                     or len(self._sesiones) >= self._maximo):
                 return False
             self._sesiones[direccion] = entrada
+            logger.info("Sesion agregada: %s (total: %d)", direccion, len(self._sesiones))
             return True
 
     def quitar(self, direccion):
         with self._cerrojo:
-            return self._sesiones.pop(direccion, None)
+            resultado = self._sesiones.pop(direccion, None)
+            if resultado is not None:
+                logger.info("Sesion removida: %s (total: %d)", direccion, len(self._sesiones))
+            return resultado
 
     def interrumpir_todas(self):
         with self._cerrojo:

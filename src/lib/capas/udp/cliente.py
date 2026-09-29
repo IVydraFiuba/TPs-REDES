@@ -1,5 +1,6 @@
 """Enlace UDP del cliente, propietario de su socket."""
 
+import logging
 import socket
 import time
 
@@ -11,6 +12,8 @@ from lib.constantes import (
 
 from .enlace import Enlace
 from .errores import ErrorComunicacion, ErrorTiempoEspera
+
+logger = logging.getLogger(__name__)
 
 
 class EnlaceClienteUdp(Enlace):
@@ -36,6 +39,7 @@ class EnlaceClienteUdp(Enlace):
             raise ErrorComunicacion("Datagrama demasiado grande")
         try:
             self._conexion.sendto(datos, self._direccion)
+            logger.debug("Enviando a %s: %d bytes", self._direccion, len(datos))
         except OSError as error:
             raise ErrorComunicacion(f"Error al enviar: {error}") from error
 
@@ -53,6 +57,7 @@ class EnlaceClienteUdp(Enlace):
                     TAMANIO_MAX_DATAGRAMA + 1
                 )
             except socket.timeout as error:
+                logger.debug("Timeout esperando respuesta de %s", self._direccion)
                 raise ErrorTiempoEspera(
                     "Tiempo de espera agotado"
                 ) from error
@@ -64,4 +69,5 @@ class EnlaceClienteUdp(Enlace):
                 continue
             if len(datos) > TAMANIO_MAX_DATAGRAMA:
                 raise ErrorComunicacion("Datagrama demasiado grande")
+            logger.debug("Recibido de %s: %d bytes", direccion, len(datos))
             return datos

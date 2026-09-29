@@ -1,6 +1,7 @@
 """Operación de descarga del servidor."""
 
 import logging
+import threading
 
 from lib.capas.pca import (
     ErrorRespuesta,
@@ -16,6 +17,12 @@ logger = logging.getLogger(__name__)
 def manejador_descarga(comunicador, almacenamiento, nombre):
     """Envía al cliente un archivo del almacenamiento."""
     _, tamanio = almacenamiento.obtener_info_descarga(nombre)
+    logger.info(
+        "[%s] Iniciando descarga: %s (%d bytes)",
+        threading.current_thread().name,
+        nombre,
+        tamanio
+    )
     with almacenamiento.abrir_descarga(nombre) as lector:
         comunicador.enviar(aceptado(tamanio))
         while bloque := lector.leer_bloque(TAMANIO_BLOQUE):

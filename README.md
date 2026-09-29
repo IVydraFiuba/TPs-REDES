@@ -40,10 +40,10 @@ Analizar todo el proyecto:
 flake8 .
 ```
 
-Analizar un archivo en particular:
+Analizar un codigo en particular:
 
 ```bash
-flake8 src/lib/ejemplo.py
+flake8 src test
 ```
 
 ## Uso

@@ -49,6 +49,13 @@ class Despachador:
     def _distribuir(self, datos, direccion):
         try:
             segmento = decodificar_segmento(datos)
+            logger.debug(
+                "[%s] Datagrama recibido de %s: tipo=%s, %d bytes",
+                threading.current_thread().name,
+                direccion,
+                segmento.tipo.name,
+                len(datos)
+            )
             if segmento.tipo == TipoSegmento.SYN:
                 self._establecer(direccion, segmento)
                 return
@@ -56,16 +63,23 @@ class Despachador:
             entrada = self._registro.buscar(direccion)
             if entrada is None:
                 logger.debug(
-                    "Datagrama de sesión desconocida: %s", direccion
+                    "[%s] Sesion desconocida para %s",
+                    threading.current_thread().name,
+                    direccion
                 )
             elif not entrada.enlace.entregar(datos):
                 logger.debug(
-                    "Cola llena o sesión cerrada: %s", direccion
+                    "[%s] Cola llena o sesion cerrada: %s",
+                    threading.current_thread().name,
+                    direccion
                 )
         except (ErrorSegmento, ErrorModoNoImplementado,
                 ErrorComunicacion, OSError, RuntimeError) as error:
             logger.warning(
-                "Datagrama de %s descartado: %s", direccion, error
+                "[%s] Datagrama de %s descartado: %s",
+                threading.current_thread().name,
+                direccion,
+                error
             )
 
     def _establecer(self, direccion, segmento):
@@ -102,6 +116,12 @@ class Despachador:
             )
             enlace.enviar(respuesta)
             entrada.hilo.start()
+            logger.info(
+                "[%s] Sesion iniciada para %s (protocolo=%d)",
+                threading.current_thread().name,
+                direccion,
+                protocolo
+            )
         except Exception:
             self._registro.quitar(direccion)
             enlace.interrumpir()

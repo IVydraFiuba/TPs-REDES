@@ -1,6 +1,7 @@
 """Operación de subida del servidor."""
 
 import logging
+import threading
 
 from lib.capas.pca import (
     ErrorRespuesta,
@@ -15,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 def manejador_subida(comunicador, almacenamiento, nombre, tamanio):
     """Recibe un archivo y lo publica cuando llega completo."""
+    logger.info(
+        "[%s] Iniciando subida: %s (%d bytes)",
+        threading.current_thread().name,
+        nombre,
+        tamanio
+    )
     with almacenamiento.recibir_subida(nombre) as escritor:
         comunicador.enviar(aceptado())
         recibidos = 0
