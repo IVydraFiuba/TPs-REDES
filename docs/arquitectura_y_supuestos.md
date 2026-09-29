@@ -18,6 +18,15 @@ Esta decisión se apoya en los siguientes supuestos:
 - No llegan datagramas demorados después de finalizar su sesión.
 - No se reutiliza un puerto mientras queden datagramas de su sesión anterior.
 
-Estas restricciones permiten que el despachador futuro use `(IP, puerto)` como
-clave del registro de sesiones. Stop-and-Wait y SACK mantendrán sus números de
+Estas restricciones permiten que el despachador use `(IP, puerto)` como clave
+del registro de sesiones. Stop-and-Wait y SACK mantendrán sus números de
 secuencia y confirmación dentro del canal asociado a ese endpoint.
+
+## Límites de concurrencia
+
+- El servidor admite hasta 50 sesiones activas.
+- Si se alcanza el límite, una nueva solicitud se descarta y vence por timeout.
+- Cada sesión se ejecuta en un hilo y recibe datagramas mediante una cola.
+- Las colas se dimensionan para las pruebas previstas del trabajo práctico.
+- En modo directo, una cola llena puede producir una transferencia incompleta.
+- Stop-and-Wait y SACK serán responsables de recuperar datagramas descartados.

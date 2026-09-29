@@ -8,7 +8,7 @@ from lib.constantes import PROTO_DIRECTO, PROTOCOLS
 from lib.rdt.errores import ErrorModoNoImplementado
 from lib.rdt.establecimiento import solicitar_sesion
 from lib.rdt.fabrica import crear_canal
-from lib.udp import EnlaceUdp
+from lib.udp import EnlaceClienteUdp
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class Cliente:
             raise ErrorModoNoImplementado(
                 f"Protocolo {self._protocolo} aún no implementado")
 
-        enlace = EnlaceUdp(conexion, self._direccion)
+        enlace = EnlaceClienteUdp(conexion, self._direccion)
         solicitar_sesion(enlace, self._protocolo)
         return crear_canal(self._protocolo, enlace)
 
