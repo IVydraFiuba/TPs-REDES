@@ -1,6 +1,6 @@
 """Formato compartido por directo, Stop-and-Wait y SACK.
 
-versión(1), tipo(1), secuencia(4), ack(4), longitud(2), carga.
+tipo(1), secuencia(4), ack(4), longitud(2), carga.
 """
 
 import struct
@@ -19,9 +19,8 @@ class TipoSegmento(IntEnum):
     FIN = 4
 
 
-_CABECERA = struct.Struct("!BBIIH")
+_CABECERA = struct.Struct("!BIIH")
 assert _CABECERA.size == TAMANIO_MAX_DATAGRAMA - TAMANIO_MAX_CARGA_SEGMENTO
-VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -42,7 +41,7 @@ def codificar_segmento(segmento):
     if any(type(n) is not int or not 0 <= n <= 0xffffffff for n in
            (segmento.secuencia, segmento.confirmacion)):
         raise ErrorSegmento("Secuencia o confirmación inválidas")
-    return _CABECERA.pack(VERSION, segmento.tipo,
+    return _CABECERA.pack(segmento.tipo,
                           segmento.secuencia, segmento.confirmacion,
                           len(segmento.carga)) + segmento.carga
 
@@ -50,11 +49,11 @@ def codificar_segmento(segmento):
 def decodificar_segmento(datos):
     if len(datos) < _CABECERA.size or len(datos) > TAMANIO_MAX_DATAGRAMA:
         raise ErrorSegmento("Tamaño de segmento inválido")
-    version, tipo, secuencia, confirmacion, longitud = (
+    tipo, secuencia, confirmacion, longitud = (
         _CABECERA.unpack_from(datos)
     )
-    if version != VERSION or longitud != len(datos) - _CABECERA.size:
-        raise ErrorSegmento("Versión o longitud de segmento inválida")
+    if longitud != len(datos) - _CABECERA.size:
+        raise ErrorSegmento("Longitud de segmento inválida")
     try:
         return Segmento(TipoSegmento(tipo), secuencia, confirmacion,
                         datos[_CABECERA.size:])
