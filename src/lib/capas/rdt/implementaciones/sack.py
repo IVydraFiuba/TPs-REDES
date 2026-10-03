@@ -1,13 +1,17 @@
 """Punto de extensión para el futuro canal con SACK."""
 
+import logging
+import threading
+
 from ..canal import Canal
 from ..errores import ErrorModoNoImplementado
-from lib.constantes import TAMANIO_MAX_CARGA_SEGMENTO
 from ..segmento import (
     Segmento,
     TipoSegmento,
     codificar_segmento,
 )
+
+logger = logging.getLogger(__name__)
 
 class CanalSack(Canal):
     def __init__(self, enlace):
@@ -15,17 +19,21 @@ class CanalSack(Canal):
         self._proxima_secuencia = 0
 
     def enviar(self, datos: bytes):
-        for inicio in range(0, len(datos), TAMANIO_MAX_CARGA_SEGMENTO):
-            bloque = datos[inicio:inicio + TAMANIO_MAX_CARGA_SEGMENTO]
+        segmento = Segmento(
+            tipo=TipoSegmento.DATOS,
+            secuencia=self._proxima_secuencia,
+            carga=datos,
+        )
 
-            segmento = Segmento(
-                tipo=TipoSegmento.DATOS,
-                secuencia=self._proxima_secuencia,
-                carga=bloque,
-            )
+        logger.debug(
+        "[%s] Enviando segmento DATOS seq=%d: %d bytes",
+        threading.current_thread().name,
+        self._proxima_secuencia,
+        len(datos),
+    )
 
-            self._enlace.enviar(codificar_segmento(segmento))
-            self._proxima_secuencia += 1
+        self._enlace.enviar(codificar_segmento(segmento))
+        self._proxima_secuencia += 1
 
     def recibir(self) -> bytes:
         raise ErrorModoNoImplementado
