@@ -6,6 +6,7 @@ from .segmento import (
     codificar_segmento,
 )
 
+# ! indica orden de bytes big-endian; cada I representa un entero sin signo de 4 bytes.
 _RANGO = struct.Struct("!II")
 
 
