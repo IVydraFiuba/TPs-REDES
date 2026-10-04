@@ -1,12 +1,15 @@
 """Selección de RDT para una sesión, independiente de la aplicación."""
 
 from lib.constantes import PROTO_DIRECTO
+from lib.constantes import PROTO_SW
 
 from .errores import ErrorModoNoImplementado
 from .implementaciones.directo import CanalDirecto
+from .implementaciones.stopwait import CanalStopWait
 
 _CANALES_DISPONIBLES = {
     PROTO_DIRECTO: CanalDirecto,
+    PROTO_SW: CanalStopWait
 }
 
 
