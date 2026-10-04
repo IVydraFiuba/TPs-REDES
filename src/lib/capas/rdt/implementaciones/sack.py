@@ -1,15 +1,19 @@
 """Implementación del mecanismo de transferencia confiable de SACK.
 
 Cada segmento enviado tiene un número de secuencia y se mantiene pendiente
-hasta que es confirmado, junto con el momento en que fue enviado.
-Los ACK indican el número de secuencia del segmento que se espera recibir
-y los rangos indican qué segmentos siguientes a éste ya fueron recibidos (fuera de orden).
+hasta que es confirmado. Para cada segmento pendiente se registra además
+el momento en que fue enviado.
 
-La confirmación de un número de secuencia también confirma todos los segmentos
-anteriores a ese número. Los segmentos recibidos fuera de orden se almacenan
-temporalmente hasta poder entregarlos en el orden correcto.
+Los ACK indican el número de secuencia del segmento que se quiere recibir
+y los rangos indican qué segmentos siguientes a éste ya fueron recibidos
+(fuera de orden).
 
-Si un segmento permanece sin confirmar luego de vencer el timeout, este se retransmite."""
+La confirmación N indica que todos los segmentos con número de secuencia
+menor que N fueron recibidos correctamente. Los segmentos recibidos fuera
+de orden se almacenan temporalmente hasta poder entregarlos en el orden correcto.
+
+Si un segmento permanece sin confirmar luego de vencer el timeout, este se
+retransmite."""
 
 import logging
 import threading
