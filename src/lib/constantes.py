@@ -40,3 +40,9 @@ MAX_REINTENTOS_SACK = 10
 RTO_SW = 1.0
 RTO_MAXIMO_SW = 8.0
 MAX_REINTENTOS_SW = 10
+
+# El SYN viaja antes de que exista el canal, asi que no hereda la
+# retransmision de Stop & Wait ni de SACK: necesita la suya.
+RTO_SYN = 1.0
+RTO_MAXIMO_SYN = 8.0
+MAX_REINTENTOS_SYN = 6

@@ -1,12 +1,17 @@
 import pytest
 
 from lib.constantes import (
+    MAX_REINTENTOS_SYN,
     PROTO_DIRECTO,
     TAMANIO_CABECERA_SEGMENTO,
     TAMANIO_MAX_CARGA_SEGMENTO,
     TAMANIO_MAX_DATAGRAMA,
 )
 from lib.capas.rdt.errores import ErrorSegmento
+from lib.capas.udp.errores import (
+    ErrorComunicacion,
+    ErrorTiempoEspera,
+)
 from lib.capas.rdt.establecimiento import (
     codificar_syn,
     leer_solicitud_sesion,
@@ -21,14 +26,22 @@ from lib.capas.rdt.segmento import (
 
 
 class EnlaceFalso:
-    def __init__(self, respuesta):
+    """Responde siempre lo mismo; con `vencimientos` simula timeouts."""
+
+    def __init__(self, respuesta, vencimientos=0):
         self.respuesta = respuesta
         self.enviado = None
+        self.enviados = []
+        self.vencimientos = vencimientos
 
     def enviar(self, datos):
         self.enviado = datos
+        self.enviados.append(datos)
 
-    def recibir(self):
+    def recibir(self, timeout=None):
+        if self.vencimientos > 0:
+            self.vencimientos -= 1
+            raise ErrorTiempoEspera("sin respuesta")
         return self.respuesta
 
 
@@ -82,5 +95,29 @@ def test_cliente_rechaza_una_respuesta_de_establecimiento_inesperada():
     respuesta = codificar_segmento(Segmento(TipoSegmento.ACK))
     enlace = EnlaceFalso(respuesta)
 
-    with pytest.raises(ErrorSegmento):
+    # Una respuesta que no es el eco no sirve: se reintenta y, al
+    # agotar los intentos, se da la sesion por no establecida.
+    with pytest.raises(ErrorComunicacion):
+        solicitar_sesion(enlace, PROTO_DIRECTO)
+
+    assert len(enlace.enviados) == MAX_REINTENTOS_SYN
+
+
+def test_cliente_retransmite_el_syn_si_no_le_contestan():
+    respuesta = codificar_syn(PROTO_DIRECTO)
+    enlace = EnlaceFalso(respuesta, vencimientos=2)
+
+    solicitar_sesion(enlace, PROTO_DIRECTO)
+
+    # Dos vencimientos y recien al tercer intento llega el eco.
+    assert len(enlace.enviados) == 3
+    assert all(datos == codificar_syn(PROTO_DIRECTO)
+               for datos in enlace.enviados)
+
+
+def test_cliente_corta_si_el_servidor_nunca_contesta():
+    respuesta = codificar_syn(PROTO_DIRECTO)
+    enlace = EnlaceFalso(respuesta, vencimientos=MAX_REINTENTOS_SYN)
+
+    with pytest.raises(ErrorComunicacion):
         solicitar_sesion(enlace, PROTO_DIRECTO)
