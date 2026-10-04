@@ -14,7 +14,11 @@ from lib.capas.rdt.segmento import (
     decodificar_segmento,
 )
 from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
-from lib.constantes import RTO_MAXIMO_SACK, VENTANA_SACK
+from lib.constantes import (
+    RTO_MAXIMO_SACK,
+    RTO_MINIMO_SACK,
+    VENTANA_SACK,
+)
 
 
 class EnlaceFalso:
@@ -137,8 +141,6 @@ def test_retransmite_segmento_cuando_vence_timeout():
     enlace = EnlaceFalso()
     canal = CanalSack(enlace)
 
-    canal._rto = 0.01
-
     canal.enviar(b"A")
     canal.enviar(b"B")
     canal.enviar(b"C")
@@ -155,6 +157,9 @@ def test_retransmite_segmento_cuando_vence_timeout():
 
     assert list(canal._pendientes.keys()) == [1]
 
+    # Despues del ACK el estimador fija el RTO; se fuerza uno minusculo
+    # para que el pendiente venza sin esperar.
+    canal._rto = 0.01
     time.sleep(0.02)
 
     enlace.enviados.clear()
@@ -284,3 +289,53 @@ def test_vaciar_corta_si_el_par_deja_de_confirmar():
         canal.vaciar()
 
     assert canal._rto == RTO_MAXIMO_SACK
+
+
+def test_cerrar_responde_los_rezagados():
+    enlace = EnlaceFalso()
+    enlace.recibidos = [_datos(0, b"A"), _datos(0, b"A")]
+
+    canal = CanalSack(enlace)
+
+    assert canal.recibir() == b"A"
+    enlace.enviados.clear()
+
+    canal.cerrar()
+
+    assert len(enlace.enviados) == 1
+    ack = decodificar_segmento(enlace.enviados[0])
+    assert ack.tipo == TipoSegmento.ACK
+    assert ack.confirmacion == 1
+
+
+def test_el_rto_se_ajusta_al_rtt_medido():
+    enlace = EnlaceFalso()
+    canal = CanalSack(enlace)
+
+    canal.enviar(b"A")
+    enlace.recibidos = [codificar_segmento(
+        Segmento(TipoSegmento.ACK, confirmacion=1))]
+
+    canal.vaciar()
+
+    # El enlace falso contesta al instante: el estimador queda contra
+    # el piso, muy por debajo del RTO_SACK inicial de 1 segundo.
+    assert canal._rto == RTO_MINIMO_SACK
+    assert canal._srtt is not None
+
+
+def test_un_segmento_retransmitido_no_sirve_como_muestra():
+    enlace = EnlaceFalso()
+    canal = CanalSack(enlace)
+
+    canal.enviar(b"A")
+    canal._rto = 0.0
+    canal._retransmitir_vencidos()
+
+    enlace.recibidos = [codificar_segmento(
+        Segmento(TipoSegmento.ACK, confirmacion=1))]
+    canal._recibir_ack()
+
+    # Regla de Karn: no se sabe a cual de los dos envios responde
+    # el ACK, asi que no se toma muestra.
+    assert canal._srtt is None

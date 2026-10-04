@@ -20,6 +20,7 @@ import threading
 import time
 
 from ..canal import Canal
+from ..errores import ErrorSegmento
 from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
 from ..segmento import (
     Segmento,
@@ -34,8 +35,14 @@ from ..sack_utiles import (
 )
 
 from lib.constantes import (
+    ACKS_DUPLICADOS_SACK,
+    ALFA_SRTT,
+    BETA_DEVRTT,
+    K_DEVRTT,
+    ESPERA_CIERRE,
     MAX_REINTENTOS_SACK,
     RTO_MAXIMO_SACK,
+    RTO_MINIMO_SACK,
     RTO_SACK,
     VENTANA_SACK,
 )
@@ -53,6 +60,11 @@ class CanalSack(Canal):
         self._tiempos_pendientes = {}
         self._rto = RTO_SACK
         self._sin_progreso = 0
+        self._ultima_confirmacion = 0
+        self._repetidos = 0
+        self._srtt = None
+        self._devrtt = 0.0
+        self._retransmitidos = set()
 
     def _calcular_rangos(self):
         """Agrupa en rangos los números de secuencia recibidos."""
@@ -77,6 +89,32 @@ class CanalSack(Canal):
 
         return rangos
 
+    def _medir_rtt(self, muestra):
+        """Incorpora una muestra de RTT al estimador."""
+        if self._srtt is None:
+            self._srtt = muestra
+            self._devrtt = muestra / 2
+            return
+
+        self._devrtt = ((1 - BETA_DEVRTT) * self._devrtt
+                        + BETA_DEVRTT * abs(muestra - self._srtt))
+        self._srtt = (1 - ALFA_SRTT) * self._srtt + ALFA_SRTT * muestra
+
+    def _rto_estimado(self):
+        """RTO a partir del RTT medido, acotado entre el piso y el techo."""
+        if self._srtt is None:
+            return RTO_SACK
+
+        estimado = self._srtt + K_DEVRTT * self._devrtt
+        return min(max(estimado, RTO_MINIMO_SACK), RTO_MAXIMO_SACK)
+
+    def _confirmar(self):
+        """Reenvia el ACK con el acumulativo y los bloques actuales."""
+        self._enlace.enviar(codificar_ack_sack(
+            self._proxima_secuencia_recibir,
+            self._calcular_rangos(),
+        ))
+
     def _procesar_ack(self, segmento):
         """Actualiza los segmentos pendientes según el ACK recibido."""
         if segmento.tipo != TipoSegmento.ACK:
@@ -90,18 +128,60 @@ class CanalSack(Canal):
             rangos,
         )
 
-        for secuencia in list(self._pendientes):
-            if secuencia < segmento.confirmacion:
-                del self._pendientes[secuencia]
-                self._tiempos_pendientes.pop(secuencia, None)
-
+        confirmados = [secuencia for secuencia in self._pendientes
+                       if secuencia < segmento.confirmacion]
         for inicio, fin in rangos:
-            for secuencia in range(inicio, fin + 1):
-                self._pendientes.pop(secuencia, None)
-                self._tiempos_pendientes.pop(secuencia, None)
+            confirmados.extend(secuencia
+                               for secuencia in range(inicio, fin + 1)
+                               if secuencia in self._pendientes)
+
+        limpio = None
+        for secuencia in confirmados:
+            if (secuencia not in self._retransmitidos
+                    and (limpio is None or secuencia > limpio)):
+                limpio = secuencia
+
+        muestra = None
+        if limpio is not None:
+            muestra = self._tiempos_pendientes.get(limpio)
+
+        for secuencia in confirmados:
+            self._pendientes.pop(secuencia, None)
+            self._tiempos_pendientes.pop(secuencia, None)
+            self._retransmitidos.discard(secuencia)
+
+        if muestra is not None:
+            self._medir_rtt(time.monotonic() - muestra)
+            self._rto = self._rto_estimado()
+
+        if segmento.confirmacion > self._ultima_confirmacion:
+            self._ultima_confirmacion = segmento.confirmacion
+            self._repetidos = 0
+            return
+
+        if rangos:
+            self._repetidos += 1
+            if self._repetidos >= ACKS_DUPLICADOS_SACK:
+                self._retransmitir(segmento.confirmacion)
+                self._repetidos = 0
+
+    def _retransmitir(self, secuencia):
+        """Reenvia un segmento puntual y reinicia su temporizador."""
+        segmento = self._pendientes.get(secuencia)
+        if segmento is None:
+            return
+
+        logger.debug("Retransmision rapida del segmento seq=%d", secuencia)
+        self._enlace.enviar(codificar_segmento(segmento))
+        self._tiempos_pendientes[secuencia] = time.monotonic()
+        self._retransmitidos.add(secuencia)
 
     def _recibir_ack(self):
-        """Espera y procesa un segmento ACK."""
+        """Procesa un ACK. Devuelve False si vencio la espera.
+
+        Distinguir los dos casos importa: un ACK que no libera nada
+        significa que el par sigue vivo, y no debe agrandar el RTO.
+        """
         try:
             while True:
                 datos = self._enlace.recibir(self._rto)
@@ -111,10 +191,10 @@ class CanalSack(Canal):
                     continue
 
                 self._procesar_ack(segmento)
-                return
+                return True
 
         except ErrorTiempoEspera:
-            return
+            return False
 
     def _retransmitir_vencidos(self):
         """Retransmite los segmentos cuyo timeout se venció."""
@@ -131,6 +211,7 @@ class CanalSack(Canal):
 
                 self._enlace.enviar(codificar_segmento(segmento))
                 self._tiempos_pendientes[secuencia] = ahora
+                self._retransmitidos.add(secuencia)
 
     def _esperar_progreso(self):
         """Retransmite lo vencido y procesa un ACK, esperando avanzar.
@@ -141,11 +222,14 @@ class CanalSack(Canal):
         antes = len(self._pendientes)
 
         self._retransmitir_vencidos()
-        self._recibir_ack()
+        llego_ack = self._recibir_ack()
 
         if len(self._pendientes) < antes:
             self._sin_progreso = 0
-            self._rto = RTO_SACK
+            self._rto = self._rto_estimado()
+            return
+
+        if llego_ack:
             return
 
         self._sin_progreso += 1
@@ -248,9 +332,33 @@ class CanalSack(Canal):
             self._esperar_progreso()
 
     def cerrar(self):
-        """Limpia el estado pendiente del canal."""
+        """Responde duplicados un rato antes de soltar el canal.
+
+        Nada protege el ACK del ultimo mensaje de la conversacion: si se
+        pierde, el par lo retransmite. Cerrar en el acto lo deja hablando
+        solo hasta que agota sus reintentos, que son decenas de segundos.
+        Es el mismo motivo por el que TCP tiene TIME_WAIT.
+        """
+        limite = time.monotonic() + max(4 * self._rto, ESPERA_CIERRE)
+        while True:
+            restante = limite - time.monotonic()
+            if restante <= 0:
+                break
+            try:
+                segmento = decodificar_segmento(
+                    self._enlace.recibir(timeout=restante)
+                )
+            except ErrorSegmento:
+                continue
+            except (ErrorTiempoEspera, ErrorComunicacion):
+                break
+
+            if segmento.tipo == TipoSegmento.DATOS:
+                self._confirmar()
+
         self._pendientes.clear()
         self._tiempos_pendientes.clear()
         self._recibidos.clear()
+        self._retransmitidos.clear()
         self._sin_progreso = 0
         self._rto = RTO_SACK

@@ -34,15 +34,34 @@ RTO_MAXIMO_SACK = 8.0
 VENTANA_SACK = 64
 # Rondas seguidas sin que avance la ventana antes de dar por muerto al par.
 MAX_REINTENTOS_SACK = 10
+# Igual que Stop & Wait, el RTO sale del RTT medido.
+RTO_MINIMO_SACK = 0.05
+# ACK seguidos marcando el mismo agujero antes de reenviarlo sin
+# esperar el timeout (retransmision rapida).
+ACKS_DUPLICADOS_SACK = 3
 
 # Stop & Wait usa el mismo esquema: RTO inicial que se duplica en cada
 # timeout hasta el maximo, y un tope de reintentos.
 RTO_SW = 1.0
 RTO_MAXIMO_SW = 8.0
 MAX_REINTENTOS_SW = 10
+# El RTO se estima a partir del RTT medido, al estilo de TCP:
+#   RTO = SRTT + 4 * DEVRTT
+# RTO_SW solo se usa hasta tener la primera muestra. El piso evita
+# que una red muy rapida dispare retransmisiones por cualquier
+# variacion momentanea.
+RTO_MINIMO_SW = 0.05
+ALFA_SRTT = 0.125
+BETA_DEVRTT = 0.25
+K_DEVRTT = 4
 
 # El SYN viaja antes de que exista el canal, asi que no hereda la
 # retransmision de Stop & Wait ni de SACK: necesita la suya.
+# Al cerrar, el canal sigue respondiendo rezagados este tiempo. El ACK
+# del ultimo mensaje no lo protege nada: si se pierde y cerramos en el
+# acto, el par se queda retransmitiendo hasta agotar sus reintentos.
+ESPERA_CIERRE = 0.5
+
 RTO_SYN = 1.0
 RTO_MAXIMO_SYN = 8.0
 MAX_REINTENTOS_SYN = 6

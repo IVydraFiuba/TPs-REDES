@@ -8,7 +8,11 @@ from lib.capas.rdt.segmento import (
     decodificar_segmento,
 )
 from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
-from lib.constantes import MAX_REINTENTOS_SW, RTO_SW
+from lib.constantes import (
+    MAX_REINTENTOS_SW,
+    RTO_MINIMO_SW,
+    RTO_SW,
+)
 
 # Marca una espera que vence sin que llegue nada.
 TIMEOUT = object()
@@ -105,14 +109,44 @@ def test_el_timeout_retransmite_el_mismo_segmento():
     assert enlace.enviados[0] == enlace.enviados[1]
 
 
-def test_el_rto_se_duplica_con_cada_timeout_y_se_reinicia():
+def test_el_rto_se_duplica_con_cada_timeout():
     enlace = EnlaceFalso([TIMEOUT, TIMEOUT, ack(1)])
     canal = CanalStopWait(enlace)
 
     canal.enviar(b"hola")
 
     assert enlace.timeouts_pedidos == [RTO_SW, RTO_SW * 2, RTO_SW * 4]
-    assert canal._rto == RTO_SW
+    # Regla de Karn: el ACK de un segmento retransmitido no sirve como
+    # muestra de RTT, asi que el backoff se mantiene.
+    assert canal._rto == RTO_SW * 4
+
+
+def test_el_rto_se_ajusta_al_rtt_medido():
+    # El enlace falso contesta al instante: el RTT medido es casi cero y
+    # el estimador queda apoyado contra el piso.
+    enlace = EnlaceFalso([ack(1), ack(2)])
+    canal = CanalStopWait(enlace)
+
+    canal.enviar(b"uno")
+
+    assert canal._rto == RTO_MINIMO_SW
+    assert canal._srtt is not None
+
+    canal.enviar(b"dos")
+
+    # La segunda espera ya usa el RTO estimado, no el inicial.
+    assert enlace.timeouts_pedidos == [RTO_SW, RTO_MINIMO_SW]
+
+
+def test_un_segmento_limpio_despues_de_un_backoff_baja_el_rto():
+    enlace = EnlaceFalso([TIMEOUT, ack(1), ack(2)])
+    canal = CanalStopWait(enlace)
+
+    canal.enviar(b"uno")
+    assert canal._rto == RTO_SW * 2
+
+    canal.enviar(b"dos")
+    assert canal._rto == RTO_MINIMO_SW
 
 
 def test_enviar_corta_tras_agotar_los_reintentos():
@@ -168,3 +202,19 @@ def test_recibir_corta_si_el_par_deja_de_enviar():
 
     with pytest.raises(ErrorComunicacion):
         canal.recibir()
+
+
+def test_cerrar_responde_los_rezagados():
+    enlace = EnlaceFalso([datos(0, b"A"), datos(0, b"A")])
+    canal = CanalStopWait(enlace)
+
+    assert canal.recibir() == b"A"
+    enlace.enviados.clear()
+
+    canal.cerrar()
+
+    # El duplicado que llego tarde se vuelve a confirmar. Si el canal
+    # cerrara en el acto, el par seguiria retransmitiendo contra nadie.
+    confirmaciones = enviados_de_tipo(enlace, TipoSegmento.ACK)
+    assert len(confirmaciones) == 1
+    assert confirmaciones[0].confirmacion == 1

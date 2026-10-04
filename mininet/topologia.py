@@ -9,6 +9,7 @@
 import argparse
 import hashlib
 import os
+import shutil
 import time
 
 from mininet.cli import CLI
@@ -87,12 +88,25 @@ def medir(net, perdida, rtt):
     storage = os.path.join(trabajo, "servidor")
     bajadas = os.path.join(trabajo, "bajadas")
     rutas = preparar_archivos(trabajo)
-    os.makedirs(storage, exist_ok=True)
-    os.makedirs(bajadas, exist_ok=True)
+
+    # Vaciar antes de empezar. Si queda un archivo de una corrida
+    # anterior, el servidor rechaza la subida con ErrorArchivoExistente,
+    # la transferencia no ocurre, y la verificacion por MD5 igual da bien
+    # porque el archivo viejo tiene el contenido correcto: la corrida se
+    # anota como "ok" en milisegundos sin haber transferido nada.
+    for directorio in (storage, bajadas):
+        shutil.rmtree(directorio, ignore_errors=True)
+        os.makedirs(directorio, exist_ok=True)
     md5_origen = {n: _md5(r) for n, r in rutas.items()}
 
+    # El log del servidor va a un archivo: si una transferencia falla,
+    # es lo unico que cuenta que paso del otro lado.
+    ruta_log = os.path.join(trabajo, "servidor.log")
+    archivo_log = open(ruta_log, "w")
     servidor = h2.popen(["python3", SERVIDOR, "-H", IP_SERVIDOR,
-                         "-p", str(PUERTO), "-s", storage, "-v"])
+                         "-p", str(PUERTO), "-s", storage, "-v"],
+                        stdout=archivo_log, stderr=archivo_log)
+    print("  log del servidor en %s" % ruta_log)
     time.sleep(2)
 
     filas = []
@@ -142,6 +156,7 @@ def medir(net, perdida, rtt):
         requisito = correr_par("sack", nombre, tam)
     finally:
         servidor.terminate()
+        archivo_log.close()
 
     print()
     print("Operacion,Protocolo,Tamano,Perdida %,RTT ms,Tiempo s,"

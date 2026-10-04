@@ -2,8 +2,11 @@
 
 Un segmento en vuelo por vez: se envía y no se continúa hasta que llega
 su confirmación. Lo único que provoca una retransmisión es el
-vencimiento del timeout; el RTO se duplica en cada intento y vuelve a su
-valor inicial con cada confirmación que avanza.
+vencimiento del timeout; el RTO se duplica en cada intento.
+
+El RTO no es fijo: se estima a partir del RTT que se mide en cada
+confirmación, igual que TCP. Un valor fijo o bien es demasiado corto y
+retransmite de más, o bien es demasiado largo y se pasa esperando.
 
 El campo `confirmacion` lleva el próximo número de secuencia esperado,
 igual que en SACK, de modo que el significado del campo no depende del
@@ -12,11 +15,17 @@ protocolo que se haya negociado.
 
 import logging
 import threading
+import time
 from queue import Queue
 
 from lib.constantes import (
+    ALFA_SRTT,
+    ESPERA_CIERRE,
+    BETA_DEVRTT,
+    K_DEVRTT,
     MAX_REINTENTOS_SW,
     RTO_MAXIMO_SW,
+    RTO_MINIMO_SW,
     RTO_SW,
 )
 
@@ -40,6 +49,8 @@ class CanalStopWait(Canal):
         self.secuencia_actual_recepcion = 0
         self.datos_en_espera = Queue()
         self._rto = RTO_SW
+        self._srtt = None
+        self._devrtt = 0.0
 
     # ------------------------------------------------------- recepción
 
@@ -70,6 +81,25 @@ class CanalStopWait(Canal):
 
     # --------------------------------------------------------- emisión
 
+    def _medir_rtt(self, muestra):
+        """Incorpora una muestra de RTT al estimador."""
+        if self._srtt is None:
+            self._srtt = muestra
+            self._devrtt = muestra / 2
+            return
+
+        self._devrtt = ((1 - BETA_DEVRTT) * self._devrtt
+                        + BETA_DEVRTT * abs(muestra - self._srtt))
+        self._srtt = (1 - ALFA_SRTT) * self._srtt + ALFA_SRTT * muestra
+
+    def _rto_estimado(self):
+        """RTO a partir del RTT medido, acotado entre el piso y el techo."""
+        if self._srtt is None:
+            return RTO_SW
+
+        estimado = self._srtt + K_DEVRTT * self._devrtt
+        return min(max(estimado, RTO_MINIMO_SW), RTO_MAXIMO_SW)
+
     def _retransmitir(self, segmento, intentos):
         """Reenvía el segmento en vuelo y agranda el RTO."""
         intentos += 1
@@ -96,9 +126,11 @@ class CanalStopWait(Canal):
             secuencia=self.secuencia_actual_envio,
             carga=datos,
         ))
+        enviado_en = time.monotonic()
         self._enlace.enviar(segmento)
 
         intentos = 0
+        retransmitido = False
         while True:
             try:
                 recepcion = decodificar_segmento(
@@ -106,6 +138,7 @@ class CanalStopWait(Canal):
                 )
             except ErrorTiempoEspera:
                 intentos = self._retransmitir(segmento, intentos)
+                retransmitido = True
                 continue
             except ErrorSegmento:
                 continue
@@ -113,8 +146,11 @@ class CanalStopWait(Canal):
             if recepcion.tipo == TipoSegmento.ACK:
                 if recepcion.confirmacion > self.secuencia_actual_envio:
                     self.secuencia_actual_envio += 1
-                    self._rto = RTO_SW
-                    logger.debug("SW: ACK correcto")
+                    #Los retrasmitidos no sirven como muestra
+                    if not retransmitido:
+                        self._medir_rtt(time.monotonic() - enviado_en)
+                        self._rto = self._rto_estimado()
+                    logger.debug("SW: ACK correcto, rto=%.3f", self._rto)
                     return
                 continue
 
@@ -155,4 +191,26 @@ class CanalStopWait(Canal):
         """No hace nada: `enviar` ya vuelve con el segmento confirmado."""
 
     def cerrar(self):
-        pass
+        """Responde duplicados un rato antes de soltar el canal.
+
+        Nada protege el ACK del ultimo mensaje de la conversacion: si se
+        pierde, el par lo retransmite. Cerrar en el acto lo deja hablando
+        solo hasta que agota sus reintentos, que son decenas de segundos.
+        Es el mismo motivo por el que TCP tiene TIME_WAIT.
+        """
+        limite = time.monotonic() + max(4 * self._rto, ESPERA_CIERRE)
+        while True:
+            restante = limite - time.monotonic()
+            if restante <= 0:
+                break
+            try:
+                segmento = decodificar_segmento(
+                    self._enlace.recibir(timeout=restante)
+                )
+            except ErrorSegmento:
+                continue
+            except (ErrorTiempoEspera, ErrorComunicacion):
+                break
+
+            if segmento.tipo == TipoSegmento.DATOS:
+                self._procesar_datos(segmento)
