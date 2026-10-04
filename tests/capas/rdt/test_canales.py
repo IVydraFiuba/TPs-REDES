@@ -17,7 +17,7 @@ def test_fabrica_crea_el_modo_directo():
     assert canal is not None
 
 
-@pytest.mark.parametrize("protocolo", [PROTO_SW, PROTO_SACK])
+@pytest.mark.parametrize("protocolo", [PROTO_SW])
 def test_fabrica_rechaza_modos_pendientes(protocolo):
     with pytest.raises(ErrorModoNoImplementado):
         validar_modo(protocolo)
@@ -26,5 +26,3 @@ def test_fabrica_rechaza_modos_pendientes(protocolo):
 def test_modulos_pendientes_se_pueden_importar_sin_habilitarlos():
     with pytest.raises(ErrorModoNoImplementado):
         CanalStopWait(EnlaceFalso())
-    with pytest.raises(ErrorModoNoImplementado):
-        CanalSack(EnlaceFalso())

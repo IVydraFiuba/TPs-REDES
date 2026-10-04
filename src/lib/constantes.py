@@ -25,3 +25,6 @@ TIMEOUT_DESPACHADOR = 0.2
 TAMANIO_BUFFER_RECEPCION_UDP = 8 * 1024 * 1024
 CAPACIDAD_COLA_SESION = 4096
 MAXIMO_SESIONES = 50
+
+# Tiempo de espera para retransmisión de un segmento en Sack.
+RTO_SACK = 1.0
