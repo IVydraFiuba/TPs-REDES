@@ -2,6 +2,7 @@
 
 from lib.constantes import PROTO_DIRECTO
 from lib.constantes import PROTO_SW
+from lib.constantes import PROTO_SACK
 
 from .errores import ErrorModoNoImplementado
 from .implementaciones.directo import CanalDirecto
@@ -9,7 +10,8 @@ from .implementaciones.stopwait import CanalStopWait
 
 _CANALES_DISPONIBLES = {
     PROTO_DIRECTO: CanalDirecto,
-    PROTO_SW: CanalStopWait
+    PROTO_SW: CanalStopWait,
+    PROTO_SACK: CanalStopWait
 }
 
 
