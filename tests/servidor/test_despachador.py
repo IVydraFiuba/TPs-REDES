@@ -7,6 +7,7 @@ from lib.capas.rdt.segmento import (
     TipoSegmento,
     codificar_segmento,
 )
+from lib.servidor import registro_sesiones
 from lib.servidor.despachador import Despachador
 from lib.servidor.registro_sesiones import (
     EntradaSesion,
@@ -98,3 +99,79 @@ def test_fin_de_sesion_elimina_el_endpoint_del_registro():
 
     assert despachador._registro.buscar(direccion) is None
     assert entrada.enlace.entregar(b"tardio") is False
+
+
+# ----------------------------------- sesiones recien cerradas (TIME_WAIT)
+
+
+def ack(confirmacion):
+    return codificar_segmento(Segmento(
+        TipoSegmento.ACK,
+        confirmacion=confirmacion,
+    ))
+
+
+def cerrar_sesion_que_envio(despachador, conexion, direccion, ultimo):
+    """Deja una sesion cerrada cuyo ultimo envio fue `ultimo`."""
+    entrada = crear_entrada(conexion, direccion)
+    despachador._registro.agregar(direccion, entrada)
+    entrada.enlace.enviar(ultimo)
+    despachador._registro.quitar(direccion)
+    entrada.enlace.interrumpir()
+    conexion.enviados.clear()
+    return entrada
+
+
+def test_un_rezagado_recibe_otra_vez_el_ultimo_ack():
+    conexion = SocketFalso()
+    direccion = ("127.0.0.1", 9001)
+    despachador = Despachador(conexion, None, threading.Event())
+    cerrar_sesion_que_envio(despachador, conexion, direccion, ack(7))
+
+    # El par retransmite el ultimo mensaje porque no le llego el ACK.
+    despachador._distribuir(
+        codificar_segmento(Segmento(TipoSegmento.DATOS, secuencia=6)),
+        direccion,
+    )
+
+    # Sin esta respuesta el par retransmite hasta agotar sus reintentos.
+    assert conexion.enviados == [(ack(7), direccion)]
+
+
+def test_un_ack_rezagado_no_se_contesta():
+    conexion = SocketFalso()
+    direccion = ("127.0.0.1", 9001)
+    despachador = Despachador(conexion, None, threading.Event())
+    cerrar_sesion_que_envio(despachador, conexion, direccion, ack(7))
+
+    # Contestar un ACK con otro ACK los dejaria rebotando para siempre.
+    despachador._distribuir(ack(3), direccion)
+
+    assert conexion.enviados == []
+
+
+def test_el_rezagado_se_descarta_cuando_vencio_la_espera(monkeypatch):
+    monkeypatch.setattr(registro_sesiones, "ESPERA_TIME_WAIT", 0.0)
+    conexion = SocketFalso()
+    direccion = ("127.0.0.1", 9001)
+    despachador = Despachador(conexion, None, threading.Event())
+    cerrar_sesion_que_envio(despachador, conexion, direccion, ack(7))
+
+    despachador._distribuir(
+        codificar_segmento(Segmento(TipoSegmento.DATOS, secuencia=6)),
+        direccion,
+    )
+
+    assert conexion.enviados == []
+
+
+def test_una_sesion_que_no_envio_nada_no_deja_respuesta():
+    conexion = SocketFalso()
+    direccion = ("127.0.0.1", 9001)
+    registro = RegistroSesiones(maximo=1)
+    entrada = crear_entrada(conexion, direccion)
+    registro.agregar(direccion, entrada)
+
+    registro.quitar(direccion)
+
+    assert registro.respuesta_en_espera(direccion) is None

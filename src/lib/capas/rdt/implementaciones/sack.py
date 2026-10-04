@@ -37,6 +37,7 @@ from ..sack_utiles import (
 from lib.constantes import (
     ACKS_DUPLICADOS_SACK,
     ALFA_SRTT,
+    ESPERA_RECEPCION_SACK,
     BETA_DEVRTT,
     K_DEVRTT,
     ESPERA_CIERRE,
@@ -115,6 +116,32 @@ class CanalSack(Canal):
             self._calcular_rangos(),
         ))
 
+    def _guardar(self, segmento):
+        """Almacena un DATOS, salvo que sea un duplicado ya entregado.
+
+        No avanza `_proxima_secuencia_recibir`: eso es tarea exclusiva
+        de `_entregar`, que es quien devuelve el dato a la aplicacion.
+        """
+        if segmento.secuencia >= self._proxima_secuencia_recibir:
+            self._recibidos[segmento.secuencia] = segmento.carga
+
+    def _entregar(self):
+        """Saca el proximo segmento en orden, avanza y confirma."""
+        datos = self._recibidos.pop(self._proxima_secuencia_recibir)
+        self._proxima_secuencia_recibir += 1
+        self._confirmar()
+        return datos
+
+    def _recibir_datos(self, segmento):
+        """Guarda un DATOS entrante y lo confirma.
+
+        Un duplicado ya entregado no se guarda, pero se confirma igual:
+        el par lo esta retransmitiendo justamente porque cree que no
+        llego.
+        """
+        self._guardar(segmento)
+        self._confirmar()
+
     def _procesar_ack(self, segmento):
         """Actualiza los segmentos pendientes según el ACK recibido."""
         if segmento.tipo != TipoSegmento.ACK:
@@ -177,15 +204,27 @@ class CanalSack(Canal):
         self._retransmitidos.add(secuencia)
 
     def _recibir_ack(self):
-        """Procesa un ACK. Devuelve False si vencio la espera.
+        """Procesa lo que llegue del par. Devuelve False si vencio la espera.
 
-        Distinguir los dos casos importa: un ACK que no libera nada
-        significa que el par sigue vivo, y no debe agrandar el RTO.
+        Distinguir los dos casos importa: algo que llega y no libera
+        nada significa que el par sigue vivo, y no debe agrandar el RTO.
+
+        Un DATOS que aparece mientras esperamos un ACK no se descarta:
+        se guarda y se confirma. Descartarlo deja al par retransmitiendo
+        hasta agotar sus reintentos, porque cree que su segmento nunca
+        llego, y con el RTO en el techo eso son decenas de segundos. Es
+        lo que pasaba con el ACEPTADO del servidor durante una subida:
+        el cliente, con la ventana sin llenarse, nunca pasaba por
+        `recibir`, que es el otro lugar donde se confirman los DATOS.
         """
         try:
             while True:
                 datos = self._enlace.recibir(self._rto)
                 segmento = decodificar_segmento(datos)
+
+                if segmento.tipo == TipoSegmento.DATOS:
+                    self._recibir_datos(segmento)
+                    return True
 
                 if segmento.tipo != TipoSegmento.ACK:
                     continue
@@ -213,6 +252,11 @@ class CanalSack(Canal):
                 self._tiempos_pendientes[secuencia] = ahora
                 self._retransmitidos.add(secuencia)
 
+    def _retransmitir_mas_viejo(self):
+        """Reenvia el pendiente mas antiguo sin mirar su temporizador."""
+        if self._pendientes:
+            self._retransmitir(min(self._pendientes))
+
     def _esperar_progreso(self):
         """Retransmite lo vencido y procesa un ACK, esperando avanzar.
 
@@ -231,6 +275,13 @@ class CanalSack(Canal):
 
         if llego_ack:
             return
+
+        # Vencio la espera sin novedades. El reenvio va ANTES de agrandar
+        # el RTO: si se agranda primero, `_retransmitir_vencidos` compara
+        # el tiempo transcurrido contra un RTO que crece mas rapido que
+        # el reloj (1, 2, 4, 8...) y el segmento no sale hasta la cuarta
+        # ronda, a los 15 segundos de haberse enviado.
+        self._retransmitir_mas_viejo()
 
         self._sin_progreso += 1
         self._rto = min(self._rto * 2, RTO_MAXIMO_SACK)
@@ -271,28 +322,36 @@ class CanalSack(Canal):
         self._proxima_secuencia += 1
 
     def recibir(self) -> bytes:
-        """Recibe segmentos DATOS y los entrega en orden."""
+        """Recibe segmentos DATOS y los entrega en orden.
+
+        Corta con ErrorComunicacion si el par deja de hablar por mas de
+        ESPERA_RECEPCION_SACK. Sin ese tope, un cliente que muere a
+        mitad de una transferencia deja el hilo de la sesion girando
+        para siempre: nunca corre el `finally` que la saca del registro,
+        y el servidor termina rechazando sesiones nuevas por el limite
+        de MAXIMO_SESIONES.
+
+        El tope es por tiempo y no por cantidad de intentos, porque cada
+        intento espera `self._rto`, que puede estar en el piso de 50 ms.
+        Diez intentos serian medio segundo de paciencia y cortaria
+        transferencias sanas.
+        """
+        limite = time.monotonic() + ESPERA_RECEPCION_SACK
         while True:
             if self._proxima_secuencia_recibir in self._recibidos:
-                datos = self._recibidos.pop(
-                    self._proxima_secuencia_recibir
-                )
-                self._proxima_secuencia_recibir += 1
-
-                ack = codificar_ack_sack(
-                    self._proxima_secuencia_recibir,
-                    self._calcular_rangos(),
-                )
-                self._enlace.enviar(ack)
-
-                return datos
+                return self._entregar()
 
             try:
                 datos = self._enlace.recibir(self._rto)
             except ErrorTiempoEspera:
                 self._retransmitir_vencidos()
+                if time.monotonic() >= limite:
+                    raise ErrorComunicacion(
+                        "El par dejo de enviar datos"
+                    )
                 continue
 
+            limite = time.monotonic() + ESPERA_RECEPCION_SACK
             segmento = decodificar_segmento(datos)
 
             if segmento.tipo == TipoSegmento.ACK:
@@ -302,34 +361,29 @@ class CanalSack(Canal):
             if segmento.tipo != TipoSegmento.DATOS:
                 continue
 
-            if segmento.secuencia >= self._proxima_secuencia_recibir:
-                self._recibidos[segmento.secuencia] = segmento.carga
+            self._guardar(segmento)
 
-            if segmento.secuencia == self._proxima_secuencia_recibir:
-                datos = self._recibidos.pop(
-                    self._proxima_secuencia_recibir
-                )
-                self._proxima_secuencia_recibir += 1
+            if self._proxima_secuencia_recibir in self._recibidos:
+                return self._entregar()
 
-                ack = codificar_ack_sack(
-                    self._proxima_secuencia_recibir,
-                    self._calcular_rangos(),
-                )
-                self._enlace.enviar(ack)
-
-                return datos
-
-            rangos = self._calcular_rangos()
-            ack = codificar_ack_sack(
-                self._proxima_secuencia_recibir,
-                rangos,
-            )
-            self._enlace.enviar(ack)
+            self._confirmar()
 
     def vaciar(self):
         """Espera hasta que todos los segmentos pendientes sean confirmados."""
         while self._pendientes:
             self._esperar_progreso()
+
+    def _espera_cierre(self):
+        """Cuanto responder rezagados antes de soltar el canal.
+
+        Escala con el RTT medido, no con el RTO. Un receptor que midio
+        una sola vez tiene el mismo SRTT que uno que midio mil; lo que
+        los diferencia es DEVRTT, que aca no viene al caso. Queda el
+        default solo si nada de lo que este canal envio fue confirmado
+        nunca.
+        """
+        base = self._srtt if self._srtt is not None else RTO_SACK
+        return max(4 * base, ESPERA_CIERRE)
 
     def cerrar(self):
         """Responde duplicados un rato antes de soltar el canal.
@@ -338,8 +392,16 @@ class CanalSack(Canal):
         pierde, el par lo retransmite. Cerrar en el acto lo deja hablando
         solo hasta que agota sus reintentos, que son decenas de segundos.
         Es el mismo motivo por el que TCP tiene TIME_WAIT.
+
+        Lo que hay que cubrir son un par de round trips, asi que la
+        espera sale del RTT y no del RTO. Escalar con `self._rto` lo
+        hace crecer con el backoff: si el par acaba de darse por
+        muerto, el RTO quedo en el techo y serian 32 segundos de
+        espera. Y el RTO estimado tampoco sirve, porque lleva
+        4*DEVRTT de margen para no retransmitir de mas, margen que
+        aca no significa nada.
         """
-        limite = time.monotonic() + max(4 * self._rto, ESPERA_CIERRE)
+        limite = time.monotonic() + self._espera_cierre()
         while True:
             restante = limite - time.monotonic()
             if restante <= 0:

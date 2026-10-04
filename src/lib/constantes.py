@@ -39,6 +39,11 @@ RTO_MINIMO_SACK = 0.05
 # ACK seguidos marcando el mismo agujero antes de reenviarlo sin
 # esperar el timeout (retransmision rapida).
 ACKS_DUPLICADOS_SACK = 3
+# Paciencia del receptor antes de dar al par por muerto. Tiene que
+# superar el presupuesto total del emisor, o corta mientras el otro
+# todavia esta retransmitiendo. Stop & Wait llega al mismo numero por
+# otro camino: espera RTO_MAXIMO_SW en cada uno de sus reintentos.
+ESPERA_RECEPCION_SACK = MAX_REINTENTOS_SACK * RTO_MAXIMO_SACK
 
 # Stop & Wait usa el mismo esquema: RTO inicial que se duplica en cada
 # timeout hasta el maximo, y un tope de reintentos.
@@ -55,13 +60,25 @@ ALFA_SRTT = 0.125
 BETA_DEVRTT = 0.25
 K_DEVRTT = 4
 
-# El SYN viaja antes de que exista el canal, asi que no hereda la
-# retransmision de Stop & Wait ni de SACK: necesita la suya.
 # Al cerrar, el canal sigue respondiendo rezagados este tiempo. El ACK
 # del ultimo mensaje no lo protege nada: si se pierde y cerramos en el
 # acto, el par se queda retransmitiendo hasta agotar sus reintentos.
 ESPERA_CIERRE = 0.5
 
+# Tras cerrar una sesion, el servidor sigue contestando los rezagados
+# de esa direccion este tiempo. El ACK del ultimo mensaje no lo protege
+# nada: si se pierde, el par lo retransmite. Sin esta ventana el
+# despachador lo descarta como "sesion desconocida" y el par se queda
+# retransmitiendo hasta agotar sus reintentos. Es el TIME_WAIT de TCP.
+#
+# Tiene que cubrir todo el presupuesto de reintentos del par, por el
+# mismo motivo que ESPERA_RECEPCION_SACK: una ventana mas corta vence
+# justo antes de que llegue la retransmision que venia a contestar.
+# Cuesta una entrada y un datagrama por sesion cerrada.
+ESPERA_TIME_WAIT = ESPERA_RECEPCION_SACK
+
+# El SYN viaja antes de que exista el canal, asi que no hereda la
+# retransmision de Stop & Wait ni de SACK: necesita la suya.
 RTO_SYN = 1.0
 RTO_MAXIMO_SYN = 8.0
 MAX_REINTENTOS_SYN = 6

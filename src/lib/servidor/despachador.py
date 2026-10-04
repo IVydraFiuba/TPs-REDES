@@ -62,11 +62,7 @@ class Despachador:
 
             entrada = self._registro.buscar(direccion)
             if entrada is None:
-                logger.debug(
-                    "[%s] Sesion desconocida para %s",
-                    threading.current_thread().name,
-                    direccion
-                )
+                self._contestar_rezagado(direccion, segmento)
             elif not entrada.enlace.entregar(datos):
                 logger.debug(
                     "[%s] Cola llena o sesion cerrada: %s",
@@ -81,6 +77,33 @@ class Despachador:
                 direccion,
                 error
             )
+
+    def _contestar_rezagado(self, direccion, segmento):
+        """Reenvia el ultimo ACK de una sesion que acaba de cerrar.
+
+        El ACK del ultimo mensaje de una transferencia no esta protegido
+        por nada: si se pierde, el par lo retransmite. Reenviar el ACK
+        que la sesion mando al final lo desbloquea en un RTO, en vez de
+        dejarlo retransmitir hasta agotar sus reintentos.
+        """
+        respuesta = None
+        if segmento.tipo == TipoSegmento.DATOS:
+            respuesta = self._registro.respuesta_en_espera(direccion)
+
+        if respuesta is None:
+            logger.debug(
+                "[%s] Sesion desconocida para %s",
+                threading.current_thread().name,
+                direccion
+            )
+            return
+
+        logger.debug(
+            "[%s] Rezagado de %s: reenvio el ultimo ACK",
+            threading.current_thread().name,
+            direccion
+        )
+        self._conexion.sendto(respuesta, direccion)
 
     def _establecer(self, direccion, segmento):
         protocolo = leer_solicitud_sesion(segmento)

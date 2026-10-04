@@ -23,6 +23,10 @@ class EnlaceSesionUdp(Enlace):
         self._direccion = direccion
         self._entrada = queue.Queue(maxsize=capacidad)
         self._interrumpido = threading.Event()
+        # Ultimo datagrama enviado. Casi siempre es el ACK mas reciente;
+        # al cerrar la sesion sirve para contestar los rezagados sin
+        # mantener vivo el hilo.
+        self._ultimo_enviado = None
 
     def entregar(self, datos: bytes) -> bool:
         """Agrega un datagrama a la cola; devuelve False si no hay lugar."""
@@ -43,6 +47,7 @@ class EnlaceSesionUdp(Enlace):
             raise ErrorComunicacion("Datagrama demasiado grande")
         try:
             self._conexion.sendto(datos, self._direccion)
+            self._ultimo_enviado = datos
             logger.debug("[%s] Enviando datagrama: %d bytes", self._direccion, len(datos))
         except OSError as error:
             raise ErrorComunicacion(f"Error al enviar: {error}") from error
@@ -64,6 +69,11 @@ class EnlaceSesionUdp(Enlace):
             except queue.Empty:
                 continue
         raise ErrorComunicacion("Sesión interrumpida")
+
+    @property
+    def ultimo_enviado(self):
+        """Ultimo datagrama que se envio por esta sesion, o None."""
+        return self._ultimo_enviado
 
     def interrumpir(self):
         logger.debug("[%s] Sesion interrumpida", self._direccion)

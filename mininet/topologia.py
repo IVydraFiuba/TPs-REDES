@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import os
 import shutil
+import tempfile
 import time
 
 from mininet.cli import CLI
@@ -101,12 +102,21 @@ def medir(net, perdida, rtt):
 
     # El log del servidor va a un archivo: si una transferencia falla,
     # es lo unico que cuenta que paso del otro lado.
+    #
+    # Se escribe en /tmp y se copia al final. mediciones/ vive en /mnt/c,
+    # y ahi cada linea cruza 9p: con -v son mas de cien mil lineas y ese
+    # costo se mete en los tiempos que estamos midiendo. Se notaba como
+    # una asimetria falsa, porque el servidor loguea mucho mas cuando
+    # envia que cuando recibe: las bajadas salian 2.4x mas lentas que
+    # las subidas por el log, no por el protocolo.
     ruta_log = os.path.join(trabajo, "servidor.log")
-    archivo_log = open(ruta_log, "w")
+    ruta_log_vm = os.path.join(tempfile.gettempdir(), "servidor-tp.log")
+    archivo_log = open(ruta_log_vm, "w")
     servidor = h2.popen(["python3", SERVIDOR, "-H", IP_SERVIDOR,
                          "-p", str(PUERTO), "-s", storage, "-v"],
                         stdout=archivo_log, stderr=archivo_log)
-    print("  log del servidor en %s" % ruta_log)
+    print("  log del servidor en %s (se copia a %s al terminar)"
+          % (ruta_log_vm, ruta_log))
     time.sleep(2)
 
     filas = []
@@ -157,6 +167,7 @@ def medir(net, perdida, rtt):
     finally:
         servidor.terminate()
         archivo_log.close()
+        shutil.copyfile(ruta_log_vm, ruta_log)
 
     print()
     print("Operacion,Protocolo,Tamano,Perdida %,RTT ms,Tiempo s,"

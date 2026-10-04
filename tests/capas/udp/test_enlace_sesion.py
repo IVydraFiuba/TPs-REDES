@@ -61,3 +61,18 @@ def test_permite_definir_un_timeout_por_recepcion():
 
     with pytest.raises(ErrorTiempoEspera):
         enlace.recibir(timeout=0.001)
+
+
+def test_recuerda_el_ultimo_datagrama_enviado():
+    direccion = ("127.0.0.1", 9000)
+    enlace = EnlaceSesionUdp(SocketFalso(), direccion, capacidad=1)
+
+    assert enlace.ultimo_enviado is None
+
+    enlace.enviar(b"primero")
+    enlace.enviar(b"ultimo")
+
+    # El despachador lo reenvia a los rezagados cuando la sesion ya
+    # cerro, asi que sobrevive a la interrupcion.
+    enlace.interrumpir()
+    assert enlace.ultimo_enviado == b"ultimo"

@@ -190,6 +190,18 @@ class CanalStopWait(Canal):
     def vaciar(self):
         """No hace nada: `enviar` ya vuelve con el segmento confirmado."""
 
+    def _espera_cierre(self):
+        """Cuanto responder rezagados antes de soltar el canal.
+
+        Escala con el RTT medido, no con el RTO. Un receptor que midio
+        una sola vez tiene el mismo SRTT que uno que midio mil; lo que
+        los diferencia es DEVRTT, que aca no viene al caso. Queda el
+        default solo si nada de lo que este canal envio fue confirmado
+        nunca.
+        """
+        base = self._srtt if self._srtt is not None else RTO_SW
+        return max(4 * base, ESPERA_CIERRE)
+
     def cerrar(self):
         """Responde duplicados un rato antes de soltar el canal.
 
@@ -197,8 +209,16 @@ class CanalStopWait(Canal):
         pierde, el par lo retransmite. Cerrar en el acto lo deja hablando
         solo hasta que agota sus reintentos, que son decenas de segundos.
         Es el mismo motivo por el que TCP tiene TIME_WAIT.
+
+        Lo que hay que cubrir son un par de round trips, asi que la
+        espera sale del RTT y no del RTO. Escalar con `self._rto` lo
+        hace crecer con el backoff: si el par acaba de darse por
+        muerto, el RTO quedo en el techo y serian 32 segundos de
+        espera. Y el RTO estimado tampoco sirve, porque lleva
+        4*DEVRTT de margen para no retransmitir de mas, margen que
+        aca no significa nada.
         """
-        limite = time.monotonic() + max(4 * self._rto, ESPERA_CIERRE)
+        limite = time.monotonic() + self._espera_cierre()
         while True:
             restante = limite - time.monotonic()
             if restante <= 0:
