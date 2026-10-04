@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from lib.capas.rdt.implementaciones.sack import CanalSack
 from lib.capas.rdt.sack_utiles import (
     codificar_sack,
@@ -11,6 +13,8 @@ from lib.capas.rdt.segmento import (
     codificar_segmento,
     decodificar_segmento,
 )
+from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
+from lib.constantes import RTO_MAXIMO_SACK, VENTANA_SACK
 
 
 class EnlaceFalso:
@@ -22,6 +26,8 @@ class EnlaceFalso:
         self.enviados.append(datos)
 
     def recibir(self, timeout=None):
+        if not self.recibidos:
+            raise ErrorTiempoEspera("sin datos")
         return self.recibidos.pop(0)
 
 
@@ -216,3 +222,65 @@ def test_vaciar_espera_confirmaciones():
     canal.vaciar()
 
     assert canal._pendientes == {}
+
+
+def _datos(secuencia, carga):
+    return codificar_segmento(Segmento(
+        TipoSegmento.DATOS,
+        secuencia=secuencia,
+        carga=carga,
+    ))
+
+
+def test_un_duplicado_ya_entregado_no_vuelve_al_buffer():
+    """Un DATOS por debajo del acumulativo se descarta, no se guarda."""
+    enlace = EnlaceFalso()
+    enlace.recibidos = [
+        _datos(0, b"A"),
+        _datos(0, b"A"),
+        _datos(1, b"B"),
+    ]
+
+    canal = CanalSack(enlace)
+
+    assert canal.recibir() == b"A"
+    assert canal.recibir() == b"B"
+
+    # Si el duplicado se hubiera guardado, quedaria ahi para siempre y
+    # ademas lo reportarian todos los ACK siguientes como un rango.
+    assert canal._recibidos == {}
+
+    ultimo = decodificar_segmento(enlace.enviados[-1])
+    assert decodificar_sack(ultimo.carga) == []
+
+
+def test_la_ventana_frena_al_emisor_cuando_se_llena():
+    """Con la ventana llena y sin ACKs, no sale ningun segmento nuevo."""
+    enlace = EnlaceFalso()
+    canal = CanalSack(enlace)
+
+    for _ in range(VENTANA_SACK):
+        canal.enviar(b"X")
+
+    assert len(enlace.enviados) == VENTANA_SACK
+
+    with pytest.raises(ErrorComunicacion):
+        canal.enviar(b"X")
+
+    secuencias = {
+        decodificar_segmento(datagrama).secuencia
+        for datagrama in enlace.enviados
+    }
+    assert secuencias == set(range(VENTANA_SACK))
+
+
+def test_vaciar_corta_si_el_par_deja_de_confirmar():
+    enlace = EnlaceFalso()
+    canal = CanalSack(enlace)
+
+    canal.enviar(b"A")
+
+    with pytest.raises(ErrorComunicacion):
+        canal.vaciar()
+
+    assert canal._rto == RTO_MAXIMO_SACK

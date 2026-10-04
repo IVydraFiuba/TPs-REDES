@@ -7,11 +7,12 @@ from lib.constantes import PROTO_SACK
 from .errores import ErrorModoNoImplementado
 from .implementaciones.directo import CanalDirecto
 from .implementaciones.stopwait import CanalStopWait
+from .implementaciones.sack import CanalSack
 
 _CANALES_DISPONIBLES = {
     PROTO_DIRECTO: CanalDirecto,
     PROTO_SW: CanalStopWait,
-    PROTO_SACK: CanalStopWait
+    PROTO_SACK: CanalSack
 }
 
 

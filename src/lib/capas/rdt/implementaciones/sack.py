@@ -20,7 +20,7 @@ import threading
 import time
 
 from ..canal import Canal
-from lib.capas.udp.errores import ErrorTiempoEspera
+from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
 from ..segmento import (
     Segmento,
     TipoSegmento,
@@ -33,7 +33,12 @@ from ..sack_utiles import (
     decodificar_sack,
 )
 
-from lib.constantes import RTO_SACK
+from lib.constantes import (
+    MAX_REINTENTOS_SACK,
+    RTO_MAXIMO_SACK,
+    RTO_SACK,
+    VENTANA_SACK,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +52,7 @@ class CanalSack(Canal):
         self._pendientes = {}
         self._tiempos_pendientes = {}
         self._rto = RTO_SACK
+        self._sin_progreso = 0
 
     def _calcular_rangos(self):
         """Agrupa en rangos los números de secuencia recibidos."""
@@ -126,8 +132,41 @@ class CanalSack(Canal):
                 self._enlace.enviar(codificar_segmento(segmento))
                 self._tiempos_pendientes[secuencia] = ahora
 
+    def _esperar_progreso(self):
+        """Retransmite lo vencido y procesa un ACK, esperando avanzar.
+
+        Si la ventana no se libera despues de MAX_REINTENTOS_SACK rondas,
+        da al par por perdido en vez de reintentar para siempre.
+        """
+        antes = len(self._pendientes)
+
+        self._retransmitir_vencidos()
+        self._recibir_ack()
+
+        if len(self._pendientes) < antes:
+            self._sin_progreso = 0
+            self._rto = RTO_SACK
+            return
+
+        self._sin_progreso += 1
+        self._rto = min(self._rto * 2, RTO_MAXIMO_SACK)
+
+        if self._sin_progreso > MAX_REINTENTOS_SACK:
+            raise ErrorComunicacion(
+                "El par dejo de confirmar: "
+                f"{len(self._pendientes)} segmentos sin ACK"
+            )
+
     def enviar(self, datos: bytes):
-        """Envía un segmento DATOS y lo mantiene pendiente de confirmación."""
+        """Envía un segmento DATOS y lo mantiene pendiente de confirmación.
+
+        Bloquea mientras la ventana este llena, procesando los ACK que
+        llegan. Asi los segmentos se confirman durante el envio y no se
+        acumulan todos hasta el final.
+        """
+        while len(self._pendientes) >= VENTANA_SACK:
+            self._esperar_progreso()
+
         segmento = Segmento(
             tipo=TipoSegmento.DATOS,
             secuencia=self._proxima_secuencia,
@@ -179,7 +218,8 @@ class CanalSack(Canal):
             if segmento.tipo != TipoSegmento.DATOS:
                 continue
 
-            self._recibidos[segmento.secuencia] = segmento.carga
+            if segmento.secuencia >= self._proxima_secuencia_recibir:
+                self._recibidos[segmento.secuencia] = segmento.carga
 
             if segmento.secuencia == self._proxima_secuencia_recibir:
                 datos = self._recibidos.pop(
@@ -205,11 +245,12 @@ class CanalSack(Canal):
     def vaciar(self):
         """Espera hasta que todos los segmentos pendientes sean confirmados."""
         while self._pendientes:
-            self._retransmitir_vencidos()
-            self._recibir_ack()
+            self._esperar_progreso()
 
     def cerrar(self):
         """Limpia el estado pendiente del canal."""
         self._pendientes.clear()
         self._tiempos_pendientes.clear()
         self._recibidos.clear()
+        self._sin_progreso = 0
+        self._rto = RTO_SACK

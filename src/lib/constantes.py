@@ -28,3 +28,15 @@ MAXIMO_SESIONES = 50
 
 # Tiempo de espera para retransmisión de un segmento en Sack.
 RTO_SACK = 1.0
+# Tope del backoff: el RTO se duplica en cada timeout hasta este valor.
+RTO_MAXIMO_SACK = 8.0
+# Segmentos sin confirmar que se permiten en vuelo a la vez.
+VENTANA_SACK = 64
+# Rondas seguidas sin que avance la ventana antes de dar por muerto al par.
+MAX_REINTENTOS_SACK = 10
+
+# Stop & Wait usa el mismo esquema: RTO inicial que se duplica en cada
+# timeout hasta el maximo, y un tope de reintentos.
+RTO_SW = 1.0
+RTO_MAXIMO_SW = 8.0
+MAX_REINTENTOS_SW = 10

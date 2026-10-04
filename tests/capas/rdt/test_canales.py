@@ -3,26 +3,40 @@ import pytest
 from lib.constantes import PROTO_DIRECTO, PROTO_SACK, PROTO_SW
 from lib.capas.rdt.errores import ErrorModoNoImplementado
 from lib.capas.rdt.fabrica import crear_canal, validar_modo
+from lib.capas.rdt.implementaciones.directo import CanalDirecto
 from lib.capas.rdt.implementaciones.sack import CanalSack
 from lib.capas.rdt.implementaciones.stopwait import CanalStopWait
+
+PROTOCOLO_DESCONOCIDO = 99
 
 
 class EnlaceFalso:
     pass
 
 
-def test_fabrica_crea_el_modo_directo():
-    canal = crear_canal(PROTO_DIRECTO, EnlaceFalso())
+@pytest.mark.parametrize("protocolo, clase", [
+    (PROTO_DIRECTO, CanalDirecto),
+    (PROTO_SW, CanalStopWait),
+    (PROTO_SACK, CanalSack),
+])
+def test_fabrica_crea_el_canal_de_cada_protocolo(protocolo, clase):
+    canal = crear_canal(protocolo, EnlaceFalso())
 
-    assert canal is not None
+    assert isinstance(canal, clase)
 
 
-@pytest.mark.parametrize("protocolo", [PROTO_SW])
-def test_fabrica_rechaza_modos_pendientes(protocolo):
+@pytest.mark.parametrize(
+    "protocolo", [PROTO_DIRECTO, PROTO_SW, PROTO_SACK]
+)
+def test_validar_modo_acepta_los_protocolos_implementados(protocolo):
+    validar_modo(protocolo)
+
+
+def test_validar_modo_rechaza_un_protocolo_desconocido():
     with pytest.raises(ErrorModoNoImplementado):
-        validar_modo(protocolo)
+        validar_modo(PROTOCOLO_DESCONOCIDO)
 
 
-def test_modulos_pendientes_se_pueden_importar_sin_habilitarlos():
+def test_fabrica_rechaza_un_protocolo_desconocido():
     with pytest.raises(ErrorModoNoImplementado):
-        CanalStopWait(EnlaceFalso())
+        crear_canal(PROTOCOLO_DESCONOCIDO, EnlaceFalso())
