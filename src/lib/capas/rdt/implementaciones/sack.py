@@ -189,7 +189,8 @@ class CanalSack(Canal):
         if rangos:
             self._repetidos += 1
             if self._repetidos >= ACKS_DUPLICADOS_SACK:
-                self._retransmitir(segmento.confirmacion)
+                if segmento.confirmacion not in self._retransmitidos:
+                    self._retransmitir(segmento.confirmacion)
                 self._repetidos = 0
 
     def _retransmitir(self, secuencia):

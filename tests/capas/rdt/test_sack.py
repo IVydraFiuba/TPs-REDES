@@ -5,6 +5,7 @@ import pytest
 from lib.capas.rdt.implementaciones import sack as modulo_sack
 from lib.capas.rdt.implementaciones.sack import CanalSack
 from lib.capas.rdt.sack_utiles import (
+    codificar_ack_sack,
     codificar_sack,
     decodificar_sack,
 )
@@ -16,6 +17,7 @@ from lib.capas.rdt.segmento import (
 )
 from lib.capas.udp.errores import ErrorComunicacion, ErrorTiempoEspera
 from lib.constantes import (
+    ACKS_DUPLICADOS_SACK,
     RTO_MAXIMO_SACK,
     RTO_MINIMO_SACK,
     VENTANA_SACK,
@@ -539,3 +541,68 @@ def test_cerrar_no_espera_proporcional_a_un_rto_inflado():
 
     # 4 * RTO_MAXIMO_SACK serian 32 s esperando a un par que ya se fue.
     assert tardo < 4 * RTO_MAXIMO_SACK
+
+
+# ------------------------------- retransmision rapida: una por perdida
+
+
+def ack_con_bloques(confirmacion, bloques):
+    return codificar_ack_sack(confirmacion, bloques)
+
+
+def datos_enviados(enlace):
+    return [
+        decodificar_segmento(datos)
+        for datos in enlace.enviados
+        if decodificar_segmento(datos).tipo == TipoSegmento.DATOS
+    ]
+
+
+def test_el_fast_retransmit_dispara_una_sola_vez_por_perdida():
+    """Con ventana de 64 llegan decenas de ACK con el mismo acumulativo.
+
+    El receptor recibe los segmentos que siguen al agujero y confirma
+    cada uno: todos los ACK llevan la misma confirmacion y bloques que
+    crecen. Reiniciando el contador, cada 3 de esos ACK se reenviaba el
+    mismo segmento, hasta 21 veces por una unica perdida.
+    """
+    enlace = EnlaceFalso()
+    canal = CanalSack(enlace)
+    for _ in range(12):
+        canal.enviar(b"x")
+    enlace.enviados.clear()
+
+    # El seq=0 se perdio; los demas llegan. 12 ACK con confirmacion=0 y
+    # bloques cada vez mas grandes.
+    for ultimo in range(1, 12):
+        enlace.recibidos.append(ack_con_bloques(0, [(1, ultimo)]))
+    while enlace.recibidos:
+        canal._recibir_ack()
+
+    reenviados = datos_enviados(enlace)
+    assert [s.secuencia for s in reenviados] == [0]
+
+
+def test_el_fast_retransmit_vuelve_a_disparar_tras_confirmarse():
+    enlace = EnlaceFalso()
+    canal = CanalSack(enlace)
+    for _ in range(8):
+        canal.enviar(b"x")
+    enlace.enviados.clear()
+
+    for _ in range(ACKS_DUPLICADOS_SACK):
+        enlace.recibidos.append(ack_con_bloques(0, [(1, 3)]))
+    while enlace.recibidos:
+        canal._recibir_ack()
+    assert [s.secuencia for s in datos_enviados(enlace)] == [0]
+
+    # Se confirma el 0 y aparece un agujero nuevo en el 4: el mecanismo
+    # tiene que volver a estar disponible.
+    enlace.recibidos.append(ack_con_bloques(4, [(5, 7)]))
+    canal._recibir_ack()
+    for _ in range(ACKS_DUPLICADOS_SACK):
+        enlace.recibidos.append(ack_con_bloques(4, [(5, 7)]))
+    while enlace.recibidos:
+        canal._recibir_ack()
+
+    assert [s.secuencia for s in datos_enviados(enlace)] == [0, 4]
