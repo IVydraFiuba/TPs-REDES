@@ -3,6 +3,7 @@ from pox.core import core                       # Main POX object
 import pox.openflow.libopenflow_01 as of        # OpenFlow 1.0 library
 from pox.lib.addresses import EthAddr, IPAddr   # Address types
 from pox.lib.packet.ethernet import ethernet
+from pox.lib.packet.arp import arp
 
 log = core.getLogger()
 RED = "\033[31m"
@@ -26,6 +27,10 @@ PUBLIC_PORT = 1                             # Puerto del switch conectado a la r
 
 H1_MAC = EthAddr("00:00:00:00:00:01")       # MAC del host externo (TODO: resolver mediante ARP)
 
+SWITCH_IPS = {
+    PRIVATE_IP: PRIVATE_MAC,
+    PUBLIC_IP: PUBLIC_MAC,
+}
 
 class ProtoRouter(object):
     def __init__(self, connection):
@@ -39,6 +44,8 @@ class ProtoRouter(object):
 
         if event.parsed.type == ethernet.IP_TYPE:
             self.handle_ip(event)
+        elif event.parsed.type == ethernet.ARP_TYPE:
+            self.handle_arp(event)
         else:
             log_color(YELLOW, f"Paquete ignorado: protocolo distinto de IPv4.")
 
@@ -97,6 +104,35 @@ class ProtoRouter(object):
 
         else:
             log_color(RED, f"NO MATCH: {ip_pkt.srcip} no pertenece a {PRIVATE_SUBNET}/{PRIVATE_MASK}")
+
+    def handle_arp(self, event):
+        # Obtener el paquete ARP
+        packet = event.parsed
+        arp_pkt = packet.payload
+        # Es un request? Preguntan por una IP del switch?
+        if arp_pkt.opcode == arp.REQUEST and arp_pkt.protodst in SWITCH_IPS:
+            my_mac = SWITCH_IPS[arp_pkt.protodst]
+
+            # Paquete ARP de respuesta
+            arp_reply = arp()
+            arp_reply.opcode = arp.REPLY
+            arp_reply.hwsrc = my_mac                  # "mi MAC es esta"
+            arp_reply.protosrc = arp_pkt.protodst     # "y soy la IP por la que preguntaste"
+            arp_reply.hwdst = arp_pkt.hwsrc           # te contesto a vos (tu MAC)...
+            arp_reply.protodst = arp_pkt.protosrc     # ...y a tu IP
+
+            # Armar el reply (arp adentro de ethernet)
+            eth = ethernet()
+            eth.type = ethernet.ARP_TYPE
+            eth.src = my_mac
+            eth.dst = arp_pkt.hwsrc
+            eth.payload = arp_reply
+            # Mandarlo con un packet_out por event.port
+            msg = of.ofp_packet_out()
+            msg.data = eth.pack()
+            msg.actions.append(of.ofp_action_output(port=event.port))
+            self.connection.send(msg)
+            log_color(GREEN, f"ARP REPLY: {arp_pkt.protodst} is-at {my_mac} → {arp_pkt.protosrc} | Out Port: {event.port}")
 
 
 def launch():
