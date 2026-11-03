@@ -25,8 +25,6 @@ PUBLIC_MAC = EthAddr("00:00:00:aa:aa:aa")   # MAC del router hacia la red públi
 PRIVATE_MAC = EthAddr("00:00:00:bb:bb:bb")  # MAC del router hacia la red privada
 PUBLIC_PORT = 1                             # Puerto del switch conectado a la red pública
 
-# H1_MAC = EthAddr("00:00:00:00:00:01")       # MAC del host externo (TODO: resolver mediante ARP)
-
 SWITCH_IPS = {
     PRIVATE_IP: PRIVATE_MAC,
     PUBLIC_IP: PUBLIC_MAC,
@@ -73,13 +71,18 @@ class ProtoRouter(object):
                 dest_mac = self.arp_table[dest_ip]
                 self.process_ip_with_destination_mac(event, dest_mac)
             else:
-                log_color(YELLOW, f"MAC desconocida para {dest_ip}. Reteniendo paquete y enviando ARP Request...")
+                # Si ya hay paquetes esperando esta IP, el request ya salió
+                ya_preguntado = dest_ip in self.packet_buffer
 
                 # 1. Guardar el evento en el buffer de pendientes
                 self.packet_buffer.setdefault(dest_ip, []).append(event)
 
-                # 2. Emitir ARP Request hacia la red pública
-                self.send_arp_request(dest_ip, PUBLIC_PORT)
+                # 2. Emitir ARP Request hacia la red pública (solo la primera vez)
+                if ya_preguntado:
+                    log_color(YELLOW, f"MAC desconocida para {dest_ip}. Reteniendo paquete (ARP Request ya enviado)")
+                else:
+                    log_color(YELLOW, f"MAC desconocida para {dest_ip}. Reteniendo paquete y enviando ARP Request...")
+                    self.send_arp_request(dest_ip, PUBLIC_PORT)
 
         else:
             log_color(RED, f"NO MATCH: {ip_pkt.srcip} no pertenece a {PRIVATE_SUBNET}/{PRIVATE_MASK}")
@@ -92,6 +95,10 @@ class ProtoRouter(object):
         # Es un request? Preguntan por una IP del switch?
         if arp_pkt.opcode == arp.REQUEST and arp_pkt.protodst in SWITCH_IPS:
             my_mac = SWITCH_IPS[arp_pkt.protodst]
+
+            # El request trae la IP y la MAC de quien pregunta: las aprendemos
+            self.arp_table[arp_pkt.protosrc] = arp_pkt.hwsrc
+            log_color(GREEN, f"ARP APRENDIDO (request): {arp_pkt.protosrc} está en {arp_pkt.hwsrc}")
 
             # Paquete ARP de respuesta
             arp_reply = arp()
