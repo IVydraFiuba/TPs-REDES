@@ -64,64 +64,50 @@ class ProtoRouter(object):
 
             log_color(GREEN, f"MATCH: {ip_pkt.srcip} pertenece a la red privada {PRIVATE_SUBNET}/{PRIVATE_MASK}")
 
-            dest_ip = ip_pkt.dstip  # IP de destino del paquete (ej. el servidor)
+            dest_ip = ip_pkt.dstip
 
-            # ¿Conocemos la MAC de destino en nuestra tabla ARP?
-            if dest_ip in self.arp_table:
-                dest_mac = self.arp_table[dest_ip]
-                self.process_ip_with_destination_mac(event, dest_mac)
-            else:
-                # Si ya hay paquetes esperando esta IP, el request ya salió
-                ya_preguntado = dest_ip in self.packet_buffer
-
-                # 1. Guardar el evento en el buffer de pendientes
-                self.packet_buffer.setdefault(dest_ip, []).append(event)
-
-                # 2. Emitir ARP Request hacia la red pública (solo la primera vez)
-                if ya_preguntado:
-                    log_color(YELLOW, f"MAC desconocida para {dest_ip}. Reteniendo paquete (ARP Request ya enviado)")
-                else:
-                    log_color(YELLOW, f"MAC desconocida para {dest_ip}. Reteniendo paquete y enviando ARP Request...")
-                    self.send_arp_request(dest_ip, PUBLIC_PORT)
+            dest_mac = self.resolve_mac(event, dest_ip)
+            if dest_mac is None:
+                return  # quedó en el buffer
+            self.process_ip_with_destination_mac(event, dest_mac)
 
         else:
             log_color(RED, f"NO MATCH: {ip_pkt.srcip} no pertenece a {PRIVATE_SUBNET}/{PRIVATE_MASK}")
 
     def handle_arp(self, event):
-        # Obtener el paquete ARP
         packet = event.parsed
         arp_pkt = packet.payload
 
-        # Es un request? Preguntan por una IP del switch?
         if arp_pkt.opcode == arp.REQUEST and arp_pkt.protodst in SWITCH_IPS:
             my_mac = SWITCH_IPS[arp_pkt.protodst]
 
-            # El request trae la IP y la MAC de quien pregunta: las aprendemos
+            # Quien pregunta nos deja su IP y MAC
             self.arp_table[arp_pkt.protosrc] = arp_pkt.hwsrc
             log_color(GREEN, f"ARP APRENDIDO (request): {arp_pkt.protosrc} está en {arp_pkt.hwsrc}")
 
             # Paquete ARP de respuesta
             arp_reply = arp()
             arp_reply.opcode = arp.REPLY
-            arp_reply.hwsrc = my_mac                  # "mi MAC es esta"
-            arp_reply.protosrc = arp_pkt.protodst     # "y soy la IP por la que preguntaste"
-            arp_reply.hwdst = arp_pkt.hwsrc           # te contesto a vos (tu MAC)...
-            arp_reply.protodst = arp_pkt.protosrc     # ...y a tu IP
+            # Origen: IP por la que preguntaron y su MAC
+            arp_reply.protosrc = arp_pkt.protodst
+            arp_reply.hwsrc = my_mac
+            # Destino: quien preguntó
+            arp_reply.protodst = arp_pkt.protosrc
+            arp_reply.hwdst = arp_pkt.hwsrc
 
-            # Armar el reply (arp adentro de ethernet)
             eth = ethernet()
             eth.type = ethernet.ARP_TYPE
             eth.src = my_mac
             eth.dst = arp_pkt.hwsrc
             eth.payload = arp_reply
-            # Mandarlo con un packet_out por event.port
+
+            # Vuelve por el mismo puerto por donde llegó el request
             msg = of.ofp_packet_out()
             msg.data = eth.pack()
             msg.actions.append(of.ofp_action_output(port=event.port))
             self.connection.send(msg)
             log_color(GREEN, f"ARP REPLY: {arp_pkt.protodst} is-at {my_mac} → {arp_pkt.protosrc} | Out Port: {event.port}")
 
-        # Es un reply? Guardamos el mapeo IP-MAC en nuestra tabla dinamica
         elif arp_pkt.opcode == arp.REPLY:
             src_ip = arp_pkt.protosrc
             src_mac = arp_pkt.hwsrc
@@ -129,7 +115,7 @@ class ProtoRouter(object):
             self.arp_table[src_ip] = src_mac
             log_color(GREEN, f"ARP APRENDIDO: {src_ip} está en {src_mac}")
 
-            # Si teniamos paquetes esperando por esta IP, los despachamos
+            # Si teniamos paquetes esperando por esta IP, los enviamos
             if src_ip in self.packet_buffer:
                 log_color(CYAN, f"Despachando paquetes pendientes para {src_ip}...")
                 for pending_event in self.packet_buffer[src_ip]:
@@ -147,7 +133,7 @@ class ProtoRouter(object):
         eth = ethernet()
         eth.type = ethernet.ARP_TYPE
         eth.src = PUBLIC_MAC
-        eth.dst = EthAddr("ff:ff:ff:ff:ff:ff")  # Broadcast
+        eth.dst = EthAddr("ff:ff:ff:ff:ff:ff")
         eth.payload = arp_req
 
         msg = of.ofp_packet_out()
@@ -200,6 +186,29 @@ class ProtoRouter(object):
         msg.actions.append(of.ofp_action_output(port=PUBLIC_PORT))
         log_color(CYAN, f"ENVIANDO: {ip_pkt.srcip} → {ip_pkt.dstip} | MAC: {PUBLIC_MAC} → {dest_mac} | Out Port: {PUBLIC_PORT}")
         self.connection.send(msg)
+
+    def resolve_mac(self, event, ip):
+        """Punto de entrada de ARP.
+
+        Devuelve la MAC de ip si está en la tabla ARP.
+        Si no, retiene event en el buffer, manda un ARP request (solo el
+        primero por IP) y devuelve None. Cuando llega el reply, handle_arp
+        llama a process_ip_with_destination_mac(event, mac) por cada evento
+        retenido.
+        """
+
+        if ip in self.arp_table:
+            return self.arp_table[ip]
+
+        already_asked = ip in self.packet_buffer
+        self.packet_buffer.setdefault(ip, []).append(event)
+
+        if already_asked:
+            log_color(YELLOW, f"MAC desconocida para {ip}. Reteniendo paquete (ARP Request ya enviado)")
+        else:
+            log_color(YELLOW, f"MAC desconocida para {ip}. Reteniendo paquete y enviando ARP Request...")
+            self.send_arp_request(ip, PUBLIC_PORT)
+        return None
 
 
 def launch():
