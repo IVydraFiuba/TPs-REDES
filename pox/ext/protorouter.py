@@ -1,7 +1,7 @@
 # Import some POX stuff
-from pox.core import core                       # Main POX object
-import pox.openflow.libopenflow_01 as of        # OpenFlow 1.0 library
-from pox.lib.addresses import EthAddr, IPAddr   # Address types
+import pox.openflow.libopenflow_01 as of  # OpenFlow 1.0 library
+from pox.core import core  # Main POX object
+from pox.lib.addresses import EthAddr, IPAddr  # Address types
 from pox.lib.packet.ethernet import ethernet
 from pox.lib.packet.arp import arp
 
