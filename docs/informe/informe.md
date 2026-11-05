@@ -65,6 +65,33 @@ IP destino -> lista de eventos pendientes
 
 ## Decisiones de diseño
 
+### Organización de archivos
+
+Separamos el controlador por responsabilidad para poder trabajar sobre ARP, PAT y las reglas sin concentrar todo en `protorouter.py`.
+
+```text
+TPs-REDES/
+├── topo.py                         # Crea la red en Mininet
+├── topo_config.json                # Direcciones, gateways y conexiones
+├── pox/
+│   ├── pox.py                      # Lanzador de POX
+│   └── ext/
+│       ├── protorouter.py           # Entrada y coordinación del router
+│       └── tp_router/
+│           ├── config.py           # Lee el JSON y configura los logs
+│           ├── ARP.py              # Resolución ARP y paquetes pendientes
+│           ├── PAT.py              # Traducción NAT por puertos 
+│           └── flujos.py           # Reglas OpenFlow y forwarding actual
+```
+
+- **`protorouter.py`:** punto de entrada del controlador. Registra los eventos OpenFlow y coordina el procesamiento de paquetes con los módulos de ARP y flujos.
+- **`config.py`:** lee `topo_config.json`, convierte las direcciones a los tipos de POX y define los valores compartidos del router. También configura el logger y los colores de sus mensajes.
+- **`ARP.py`:** administra la tabla ARP, responde consultas por las IP del router y genera solicitudes para resolver las MAC de los hosts. Retiene los paquetes que esperan una resolución ARP.
+- **`PAT.py`:** administra las tablas de traducción y la asignación de puertos públicos para identificar las conexiones de los clientes privados.
+- **`flujos.py`:** construye e instala las reglas OpenFlow de salida y retorno, y reenvía el primer paquete de cada flujo.
+- **`topo.py`:** crea los hosts, el switch y sus enlaces en Mininet a partir de `topo_config.json`.
+- **`topo_config.json`:** define las IP, MAC, gateways y puertos del switch que utilizan la topología y el controlador.
+
 ### Configuración y topología
 
 Centralizamos las direcciones y conexiones en [`topo_config.json`](../../topo_config.json) para que Mininet y POX usen los mismos valores. Esto evita duplicarlos en el código y permite cambiar la topología desde un solo archivo.
