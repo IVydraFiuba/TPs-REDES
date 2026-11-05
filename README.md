@@ -31,7 +31,7 @@ Para regenerar el diagrama después de modificar la configuración, instalar
 Graphviz (comando `dot`) y ejecutar desde la raíz del repositorio:
 
 ```bash
-python3 tools/generar_topologia.py
+python3 tools/generar_imagen_topologia.py
 ```
 Se generan el archivo fuente DOT, un SVG y un PNG en `docs/informe/img/`.
 

@@ -71,7 +71,7 @@ Centralizamos las direcciones y conexiones en [`topo_config.json`](../../topo_co
 
 En `gateways` se definen la IP con prefijo y la MAC de las interfaces pública y privada del NAT. En `hosts`, cada equipo indica su nombre, IP con prefijo, MAC, red (`private` o `public`) y puerto del switch (`switch_port`). Para agregar un cliente, se añade una entrada con IP, MAC y puerto libres. La configuración actual admite varios clientes privados y un único enlace público.
 
-Después de editar el JSON, hay que reiniciar Mininet y POX. Para actualizar el diagrama, se ejecuta `python3 tools/generar_topologia.py` desde la raíz del repositorio.
+Después de editar el JSON, hay que reiniciar Mininet y POX. Para actualizar el diagrama, se ejecuta `python3 tools/generar_imagen_topologia.py` desde la raíz del repositorio.
 
 ## Problemas encontrados y soluciones implementadas
 
