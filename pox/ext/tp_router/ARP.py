@@ -1,10 +1,13 @@
 """Resolución ARP y retención de paquetes pendientes."""
+import time
+
 import pox.openflow.libopenflow_01 as of
 from pox.lib.addresses import EthAddr
 from pox.lib.packet.arp import arp
 from pox.lib.packet.ethernet import ethernet
 
 from .config import (
+    ARP_TIMEOUT,
     CYAN,
     GREEN,
     PUBLIC_IP,
@@ -20,7 +23,7 @@ class ARP:
     def __init__(self, connection, on_resolved):
         self.connection = connection
         self.on_resolved = on_resolved
-        self.arp_table = {}  # IPAddr -> EthAddr
+        self.arp_table = {}  # IPAddr -> (EthAddr, ultima_vez_visto)
         self.packet_buffer = {}  # IPAddr -> eventos pendientes
 
     def handle_arp(self, event):
@@ -31,7 +34,7 @@ class ARP:
             my_mac = SWITCH_IPS[arp_pkt.protodst]
 
             # Quien pregunta nos deja su IP y MAC
-            self.arp_table[arp_pkt.protosrc] = arp_pkt.hwsrc
+            self.arp_table[arp_pkt.protosrc] = (arp_pkt.hwsrc, time.time())
             log_color(GREEN, f"ARP APRENDIDO (request): {arp_pkt.protosrc} está en {arp_pkt.hwsrc}")
 
             # Paquete ARP de respuesta
@@ -61,7 +64,7 @@ class ARP:
             src_ip = arp_pkt.protosrc
             src_mac = arp_pkt.hwsrc
 
-            self.arp_table[src_ip] = src_mac
+            self.arp_table[src_ip] = (src_mac, time.time())
             log_color(GREEN, f"ARP APRENDIDO: {src_ip} está en {src_mac}")
 
             # Si teniamos paquetes esperando por esta IP, los enviamos
@@ -101,10 +104,16 @@ class ARP:
         primero por IP) y devuelve None. Cuando llega el reply, handle_arp
         invoca on_resolved(event, mac) por cada evento
         retenido.
+        Si la entrada tiene más de ARP_TIMEOUT segundos sin refrescarse, se
+        borra y se trata como desconocida.
         """
 
         if ip in self.arp_table:
-            return self.arp_table[ip]
+            mac, last_seen = self.arp_table[ip]
+            if time.time() - last_seen <= ARP_TIMEOUT:
+                return mac
+            del self.arp_table[ip]
+            log_color(YELLOW, f"ARP VENCIDO: {ip} ({mac}) sin refrescar hace más de {ARP_TIMEOUT}s")
 
         already_asked = ip in self.packet_buffer
         self.packet_buffer.setdefault(ip, []).append(event)
