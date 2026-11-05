@@ -12,16 +12,45 @@
 
 ### Organización de archivos
 
-
 ```text
 TPs-REDES/
-├── topo.py                  # Topología de Mininet del TP
+├── topo.py                         # Crea la red en Mininet
+├── topo_config.json                # Direcciones, gateways y conexiones
 ├── pox/
-│   ├── pox.py               # Lanzador de POX
+│   ├── pox.py                      # Lanzador de POX
 │   └── ext/
-│       └── protorouter.py   # Controlador del TP
+│       ├── protorouter.py           # Entrada y coordinación del router
+│       └── tp_router/
+│           ├── config.py           # Lee el JSON y configura los logs
+│           ├── ARP.py              # Resolución ARP y paquetes pendientes
+│           ├── PAT.py              # Traducción NAT por puertos 
+│           └── flujos.py           # Reglas OpenFlow y forwarding actual
 └── docs/
+
 ```
+
+### Configuración
+
+Editar `topo_config.json` para cambiar las IP con prefijo, MAC, gateways y
+puertos del switch. Cada host indica su red (`private` o `public`) y su
+`switch_port`. La topología actual admite varios clientes privados y un único
+host público.
+
+Mininet y POX leen el mismo archivo; después de modificarlo, reiniciar ambos.
+El controlador aprende las MAC de los hosts mediante ARP.
+
+### Topología actual
+
+![Topología actual](docs/informe/img/topologia.png)
+
+Para regenerar el diagrama después de modificar la configuración, instalar
+Graphviz (comando `dot`) y ejecutar desde la raíz del repositorio:
+
+```bash
+python3 tools/generar_imagen_topologia.py
+```
+Se generan el archivo fuente DOT, un SVG y un PNG en `docs/informe/img/`.
+
 
 ### Ejecución del controlador
 
@@ -36,15 +65,3 @@ En otra terminal, ejecutar:
 ```bash
 sudo python3 topo.py
 ```
-
-### Orden de ejecución recomendado
-
-- Iniciar el controlador POX.
-- Ejecutar la topología en Mininet.
-- Verificar que el switch se conecte al controlador.
-
-### Verificación básica
-
-- Iniciar la red.
-- Desde la CLI de Mininet:
-    - Probar conectividad: `h2 ping h1`

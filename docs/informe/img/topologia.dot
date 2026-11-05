@@ -1,0 +1,18 @@
+graph topologia {
+  graph [rankdir=LR, bgcolor="white", pad=0.3, nodesep=0.6, ranksep=1.0, fontname="DejaVu Sans"];
+  node [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=11, margin=0.18];
+  edge [fontname="DejaVu Sans", fontsize=10, color="#64748b"];
+  label="Topología SDN · redes pública y privada";
+  labelloc=t;
+  controller [label="Controlador POX", fillcolor="#ede9fe"];
+  switch [label="s1\nSwitch OpenFlow 1.0\n\nPública: 200.0.0.254/24\nMAC: 00:00:00:aa:aa:aa\n\nPrivada: 192.168.1.254/24\nMAC: 00:00:00:bb:bb:bb", fillcolor="#e2e8f0"];
+  controller -- switch [style=dashed, label="OpenFlow", color="#7c3aed"];
+  "h1" [label="h1\nIP: 200.0.0.1/24\nMAC: 00:00:00:00:00:01\nGateway: 200.0.0.254", fillcolor="#dbeafe"];
+  "h1" -- switch [label="Puerto 1"];
+  "h2" [label="h2\nIP: 192.168.1.2/24\nMAC: 00:00:00:00:00:02\nGateway: 192.168.1.254", fillcolor="#dcfce7"];
+  switch -- "h2" [label="Puerto 2"];
+  "h3" [label="h3\nIP: 192.168.1.3/24\nMAC: 00:00:00:00:00:03\nGateway: 192.168.1.254", fillcolor="#dcfce7"];
+  switch -- "h3" [label="Puerto 3"];
+  "h4" [label="h4\nIP: 192.168.1.4/24\nMAC: 00:00:00:00:00:04\nGateway: 192.168.1.254", fillcolor="#dcfce7"];
+  switch -- "h4" [label="Puerto 4"];
+}
