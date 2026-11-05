@@ -1,55 +1,47 @@
 #!/usr/bin/python3
 
+import json
+from ipaddress import IPv4Interface
+from pathlib import Path
 from typing import cast
 
-from mininet.topo import Topo
-from mininet.net import Mininet
-from mininet.node import OVSSwitch, RemoteController
 from mininet.cli import CLI
 from mininet.link import TCLink
 from mininet.log import setLogLevel
+from mininet.net import Mininet
+from mininet.node import OVSSwitch, RemoteController
+from mininet.topo import Topo
 
-
-#                                      Tráfico Saliente
-#
-#                                      <---------------
-#
-#                           Red Pública                Red Privada
-#
-#
-#                              port 1                     port 2
-#        ┌───────┐     IP:  200.0.0.254        /\  IP: 192.168.1.254          ┌───────┐
-#        │       │     MAC: 00.00.00.aa.aa.aa /  \ MAC:00.00.00.bb.bb.bb      │       │
-#        │  h1   ├───────────────────────────/ s1 \───────────────────────────│  h2   │
-#        └───────┘                           \    /                           └───────┘
-#       /       /                             \  /                           /       /
-#      ─────────                               \/                           ─────────
-#  IP:  200.0.0.1/24                                                    IP:  192.168.1.2/24
-#  DG:  200.0.0.254                                                     DG:  192.168.1.254
-#  MAC: 00:00:00:00:00:01                                               MAC: 00:00:00:00:00:02
-#
+# Direcciones y conexiones compartidas con el controlador y el diagrama.
+CONFIG_PATH = Path(__file__).resolve().with_name("topo_config.json")
+with CONFIG_PATH.open() as config_file:
+    CONFIG = json.load(config_file)
 
 
 class NATTopo(Topo):
     def build(self):
-        s1 = self.addSwitch('s1')
-        # Servidor Publico
-        h1 = self.addHost('h1', ip='200.0.0.1/24', mac='00:00:00:00:00:01',
-                          defaultRoute='via 200.0.0.254')
-        # Clientes Privados
-        h2 = self.addHost('h2', ip='192.168.1.2/24', mac='00:00:00:00:00:02',
-                          defaultRoute='via 192.168.1.254')
-        # Hosts añadidos
-        h3 = self.addHost('h3', ip='192.168.1.3/24', mac='00:00:00:00:00:03',
-                          defaultRoute='via 192.168.1.254')
+        switch = self.addSwitch(CONFIG["switch"])
+        for host in CONFIG["hosts"]:
+            gateway = IPv4Interface(CONFIG["gateways"][host["network"]]["ip"])
+            node = self.addHost(
+                host["name"], ip=host["ip"], mac=host["mac"],
+                defaultRoute=f"via {gateway.ip}",
+            )
+            self.addLink(node, switch, port2=host["switch_port"])
 
-        h4 = self.addHost('h4', ip='192.168.1.4/24', mac='00:00:00:00:00:04',
-                          defaultRoute='via 192.168.1.254')
-        # Conexion al switch
-        self.addLink(h1, s1)
-        self.addLink(h2, s1)
-        self.addLink(h3, s1)
-        self.addLink(h4, s1)
+
+def disable_ipv6_hosts(net):
+    for host in net.hosts:
+        host.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
+        host.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
+        host.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
+
+
+def disable_ipv6_switch(net):
+    switch = cast(OVSSwitch, net.get(CONFIG["switch"]))
+    switch.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
+    switch.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
+    switch.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
 
 
 def run():
@@ -57,22 +49,8 @@ def run():
     net = Mininet(topo=topo, controller=RemoteController, link=TCLink)
     net.start()
 
-    # Deshabilita IPv6 en hosts
-    for host in net.hosts:
-        host.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
-        host.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
-        host.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
-
-    # Deshabilita IPv6 en switch
-    # s1 = net.get('s1')
-    s1 = cast(OVSSwitch, net.get('s1')) # Con esto no le molesta que haga .cmd
-    s1.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
-    s1.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
-    s1.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
-
-    # Entradas ARP para debug (TODO: Usar Protocolo ARP)
-    # net.get('h1').setARP('200.0.0.254', '00:00:00:aa:aa:aa')
-    # net.get('h2').setARP('192.168.1.254', '00:00:00:bb:bb:bb')
+    disable_ipv6_hosts(net)
+    disable_ipv6_switch(net)
 
     CLI(net)
     net.stop()

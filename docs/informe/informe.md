@@ -65,6 +65,14 @@ IP destino -> lista de eventos pendientes
 
 ## Decisiones de diseño
 
+### Configuración y topología
+
+Centralizamos las direcciones y conexiones en [`topo_config.json`](../../topo_config.json) para que Mininet y POX usen los mismos valores. Esto evita duplicarlos en el código y permite cambiar la topología desde un solo archivo.
+
+En `gateways` se definen la IP con prefijo y la MAC de las interfaces pública y privada del NAT. En `hosts`, cada equipo indica su nombre, IP con prefijo, MAC, red (`private` o `public`) y puerto del switch (`switch_port`). Para agregar un cliente, se añade una entrada con IP, MAC y puerto libres. La configuración actual admite varios clientes privados y un único enlace público.
+
+Después de editar el JSON, hay que reiniciar Mininet y POX. Para actualizar el diagrama, se ejecuta `python3 tools/generar_topologia.py` desde la raíz del repositorio.
+
 ## Problemas encontrados y soluciones implementadas
 
 ## Pruebas realizadas
@@ -72,7 +80,9 @@ IP destino -> lista de eventos pendientes
 ### Conectividad básica
 
 ### Múltiples clientes
-Para el manejo de múltiples clientes se añadió al archivo `topo.py` los puertos `h3` y `h4` cada uno en su red privada.
+Para el manejo de múltiples clientes se añadió a la topologia inicial los puertos `h3` y `h4` cada uno en su red privada.
+
+![Topología con servidor público y tres clientes privados](img/topologia.png)
 
 | Host | Red | IP | MAC | Gateway | Puerto de s1 |
 | --- | --- | --- | --- | --- | --- |
