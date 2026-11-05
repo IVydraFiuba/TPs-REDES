@@ -1,0 +1,43 @@
+{
+  "switch": "s1",
+  "gateways": {
+    "public": {
+      "ip": "200.0.0.254/24",
+      "mac": "00:00:00:aa:aa:aa"
+    },
+    "private": {
+      "ip": "192.168.1.254/24",
+      "mac": "00:00:00:bb:bb:bb"
+    }
+  },
+  "hosts": [
+    {
+      "name": "h1",
+      "network": "public",
+      "ip": "200.0.0.1/24",
+      "mac": "00:00:00:00:00:01",
+      "switch_port": 1
+    },
+    {
+      "name": "h2",
+      "network": "private",
+      "ip": "192.168.1.2/24",
+      "mac": "00:00:00:00:00:02",
+      "switch_port": 2
+    },
+    {
+      "name": "h3",
+      "network": "private",
+      "ip": "192.168.1.3/24",
+      "mac": "00:00:00:00:00:03",
+      "switch_port": 3
+    },
+    {
+      "name": "h4",
+      "network": "private",
+      "ip": "192.168.1.4/24",
+      "mac": "00:00:00:00:00:04",
+      "switch_port": 4
+    }
+  ]
+}

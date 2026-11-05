@@ -23,6 +23,19 @@ TPs-REDES/
 └── docs/
 ```
 
+### Topología actual
+
+![Topología actual](docs/informe/img/topologia.png)
+
+Para regenerar el diagrama después de modificar la configuración, instalar
+Graphviz (comando `dot`) y ejecutar desde la raíz del repositorio:
+
+```bash
+python3 tools/generar_imagen_topologia.py
+```
+Se generan el archivo fuente DOT, un SVG y un PNG en `docs/informe/img/`.
+
+
 ### Ejecución del controlador
 
 Desde una terminal, ejecutar:
@@ -36,15 +49,3 @@ En otra terminal, ejecutar:
 ```bash
 sudo python3 topo.py
 ```
-
-### Orden de ejecución recomendado
-
-- Iniciar el controlador POX.
-- Ejecutar la topología en Mininet.
-- Verificar que el switch se conecte al controlador.
-
-### Verificación básica
-
-- Iniciar la red.
-- Desde la CLI de Mininet:
-    - Probar conectividad: `h2 ping h1`

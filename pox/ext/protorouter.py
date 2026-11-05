@@ -1,9 +1,13 @@
+import json
+from ipaddress import IPv4Interface
+from pathlib import Path
+
 # Import some POX stuff
 import pox.openflow.libopenflow_01 as of  # OpenFlow 1.0 library
 from pox.core import core  # Main POX object
 from pox.lib.addresses import EthAddr, IPAddr  # Address types
-from pox.lib.packet.ethernet import ethernet
 from pox.lib.packet.arp import arp
+from pox.lib.packet.ethernet import ethernet
 
 log = core.getLogger()
 RED = "\033[31m"
@@ -17,13 +21,25 @@ def log_color(color, msg):
     log.info(f"{color}{msg}{RESET}")
 
 
-PRIVATE_SUBNET = IPAddr("192.168.1.0")      # Red interna
-PRIVATE_MASK = 24                           # Máscara de la red interna
-PRIVATE_IP = IPAddr("192.168.1.254")        # IP del router en la red privada
-PUBLIC_IP = IPAddr("200.0.0.254")           # IP del router en la red pública
-PUBLIC_MAC = EthAddr("00:00:00:aa:aa:aa")   # MAC del router hacia la red pública
-PRIVATE_MAC = EthAddr("00:00:00:bb:bb:bb")  # MAC del router hacia la red privada
-PUBLIC_PORT = 1                             # Puerto del switch conectado a la red pública
+# La ruta se resuelve desde este archivo, independientemente del directorio de ejecución.
+CONFIG_PATH = Path(__file__).resolve().parents[2] / "topo_config.json"
+with CONFIG_PATH.open() as config_file:
+    TOPO_CONFIG = json.load(config_file)
+
+_private = TOPO_CONFIG["gateways"]["private"]
+_public = TOPO_CONFIG["gateways"]["public"]
+_private_interface = IPv4Interface(_private["ip"])
+PRIVATE_SUBNET = IPAddr(str(_private_interface.network.network_address))
+PRIVATE_MASK = _private_interface.network.prefixlen
+PRIVATE_IP = IPAddr(str(_private_interface.ip))
+PUBLIC_IP = IPAddr(str(IPv4Interface(_public["ip"]).ip))
+PUBLIC_MAC = EthAddr(_public["mac"])
+PRIVATE_MAC = EthAddr(_private["mac"])
+# La topología del TP tiene un único enlace hacia la red pública.
+PUBLIC_PORT, = (
+    host["switch_port"] for host in TOPO_CONFIG["hosts"]
+    if host["network"] == "public"
+)
 
 SWITCH_IPS = {
     PRIVATE_IP: PRIVATE_MAC,
