@@ -12,16 +12,32 @@
 
 ### Organización de archivos
 
-
 ```text
 TPs-REDES/
-├── topo.py                  # Topología de Mininet del TP
+├── topo.py                         # Crea la red en Mininet
+├── topo_config.json                # Direcciones, gateways y conexiones
 ├── pox/
-│   ├── pox.py               # Lanzador de POX
+│   ├── pox.py                      # Lanzador de POX
 │   └── ext/
-│       └── protorouter.py   # Controlador del TP
+│       ├── protorouter.py           # Entrada y coordinación del router
+│       └── tp_router/
+│           ├── config.py           # Lee el JSON y configura los logs
+│           ├── ARP.py              # Resolución ARP y paquetes pendientes
+│           ├── PAT.py              # Traducción NAT por puertos 
+│           └── flujos.py           # Reglas OpenFlow y forwarding actual
 └── docs/
+
 ```
+
+### Configuración
+
+Editar `topo_config.json` para cambiar las IP con prefijo, MAC, gateways y
+puertos del switch. Cada host indica su red (`private` o `public`) y su
+`switch_port`. La topología actual admite varios clientes privados y un único
+host público.
+
+Mininet y POX leen el mismo archivo; después de modificarlo, reiniciar ambos.
+El controlador aprende las MAC de los hosts mediante ARP.
 
 ### Topología actual
 
