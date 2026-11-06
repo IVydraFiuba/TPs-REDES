@@ -33,6 +33,9 @@ class ProtoRouter:
         else:
             log_color(YELLOW, f"Paquete ignorado: protocolo distinto de IPv4.")
 
+    def _handle_FlowRemoved(self, event):
+        self.flujos.manage_flow_removed(event)
+
 
     def handle_ip(self, event):
         packet = event.parsed

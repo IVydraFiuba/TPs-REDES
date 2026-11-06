@@ -4,6 +4,17 @@
 
 ## Diseño de la tabla NAT
 
+`PAT.py` mantiene dos diccionarios, uno por sentido de búsqueda:
+
+```text
+salientes: (protocolo, ip_privada, puerto_privado) -> puerto_publico
+entrantes: (protocolo, puerto_publico) -> (protocolo, ip_privada, puerto_privado)
+```
+
+Ambas búsquedas son O(1), y el valor de cada diccionario permite llegar a la entrada del otro. No guardamos la IP pública por fila porque es una sola: la de `gateways.public`.
+
+Los puertos públicos salen del rango dinámico de la IANA (49152-65535). Hay una lista de puertos libres por protocolo, porque TCP y UDP tienen espacios independientes y pueden usar el mismo número. Asignar y liberar son O(1) (`pop` y `append`). Si no quedan puertos, `obtener_puerto` devuelve `None` y no se instala ninguna regla.
+
 ## Manejo de ARP
 
 El controlador implementa un manejo propio de ARP para comportarse como router entre la red privada y la red pública. El protocolo ARP se utiliza en dos situaciones principales:
@@ -73,6 +84,15 @@ IP destino -> lista de eventos pendientes
 
 ## Estrategia de instalación de flujos
 
+Cada conexión TCP o UDP nueva llega al controlador como `PacketIn`. `flujos.py` instala dos reglas y reenvía el primer paquete, ya traducido, con un `PacketOut`. El tráfico siguiente lo procesa el switch.
+
+| Sentido | Campos de coincidencia | Acciones |
+| --- | --- | --- |
+| Saliente | IPv4, protocolo, puerto del cliente en el switch, IP y puerto privados, IP y puerto del servidor | MAC origen pública, MAC destino del servidor, IP origen pública, puerto origen público, salida por el puerto público |
+| Entrante | IPv4, protocolo, puerto público del switch, IP y puerto del servidor, IP y puerto públicos | MAC origen privada, MAC destino del cliente, IP y puerto destino privados, salida por el puerto del cliente |
+
+Las reglas usan `idle_timeout = 10` y el flag `OFPFF_SEND_FLOW_REM`, para que el switch avise con un `FlowRemoved` cuando las borra. En la regla entrante, el puerto público está en `tp_dst`. En la saliente hay que buscarlo en `salientes`: el `match` describe el paquete antes de traducirse, y el `FlowRemoved` no incluye las acciones.
+
 ## Decisiones de diseño
 
 ### Organización de archivos
@@ -91,7 +111,7 @@ TPs-REDES/
 │           ├── config.py           # Lee el JSON y configura los logs
 │           ├── ARP.py              # Resolución ARP y paquetes pendientes
 │           ├── PAT.py              # Traducción NAT por puertos 
-│           └── flujos.py           # Reglas OpenFlow y forwarding actual
+│           └── flujos.py           # Reglas OpenFlow con traducción
 ```
 
 - **`protorouter.py`:** punto de entrada del controlador. Registra los eventos OpenFlow y coordina el procesamiento de paquetes con los módulos de ARP y flujos.
@@ -110,14 +130,54 @@ En `gateways` se definen la IP con prefijo y la MAC de las interfaces pública y
 
 Después de editar el JSON, hay que reiniciar Mininet y POX. Para actualizar el diagrama, se ejecuta `python3 tools/generar_imagen_topologia.py` desde la raíz del repositorio.
 
+### Traducción en `flujos.py`
+
+La consulta a `PAT` está en `process_ip_with_destination_mac` y no en `handle_ip`, porque los paquetes retenidos por ARP vuelven directamente a esa función. Es el único paso común a todos los paquetes salientes.
+
+### Liberación de puertos
+
+Cada conexión tiene dos reglas, y cada una vence según el tráfico de su sentido. En UDP en un solo sentido, la regla sin tráfico vence mientras la otra sigue en uso. Si el puerto se liberara con el primer aviso, otra conexión podría recibirlo.
+
+Por eso `self.reglas` guarda los sentidos con regla activa de cada conexión, y el puerto se libera cuando vencieron los dos. Usamos un set en lugar de un contador porque, al reinstalar las reglas de una conexión, la que seguía activa se reemplaza sin aviso: un contador se desfasaría.
+
 ## Problemas encontrados y soluciones implementadas
+
+### Liberación prematura de puertos
+
+Liberar el puerto con el primer `FlowRemoved` permitía reasignarlo mientras la otra regla seguía activa. Se resolvió con `self.reglas`, descripto en [Liberación de puertos](#liberación-de-puertos).
+
+### Límites actuales (sin resolver)
+
+- **ICMP:** OpenFlow 1.0 no puede matchear ni reescribir el identificador de ICMP, así que los pings no se traducen con reglas. El controlador descarta lo que no sea TCP o UDP, y por eso `h2 ping h1` no responde.
+- **Regla entrante vencida:** `handle_ip` descarta lo que llega de la red pública sin regla, aunque la conexión siga en la tabla. En UDP, si la vuelta llega después de 10 s sin tráfico entrante, se pierde.
+- **Un puerto privado hacia varios destinos:** las reglas se registran por puerto público, no por destino. Si un socket UDP habla con dos destinos a la vez, el puerto podría liberarse antes de tiempo.
 
 ## Pruebas realizadas
 
+Las pruebas se hicieron en Mininet, con `iperf` en `h1` como servidor.
+
 ### Conectividad básica
 
+Conexión TCP de `h2` a `h1` durante 5 s:
+
+```text
+mininet> h2 iperf -c 200.0.0.1 -t 5
+[  1] local 192.168.1.2 port 50462 connected with 200.0.0.1 port 5001
+[  1] 0.0000-5.0075 sec  15.7 GBytes  27.0 Gbits/sec
+```
+
+```text
+mininet> h1 cat /tmp/tcp.log
+[  1] local 200.0.0.1 port 5001 connected with 200.0.0.254 port 65535
+[  1] 0.0000-5.0011 sec  15.7 GBytes  27.0 Gbits/sec
+```
+
+`h2` usa su IP y puerto privados, y `h1` ve la conexión desde la IP pública y el puerto 65535, el primero asignado.
+
+`h2 ping h1` no responde con la versión actual: ver [Límites actuales](#límites-actuales-sin-resolver).
+
 ### Múltiples clientes
-Para el manejo de múltiples clientes se añadió a la topologia inicial los puertos `h3` y `h4` cada uno en su red privada.
+Para probar múltiples clientes se agregaron a la topología inicial los hosts `h3` y `h4`, en la misma red privada que `h2`.
 
 ![Topología con servidor público y tres clientes privados](img/topologia.png)
 
@@ -128,37 +188,55 @@ Para el manejo de múltiples clientes se añadió a la topologia inicial los pue
 | h3 | Privada | 192.168.1.3/24 | 00:00:00:00:00:03 | 192.168.1.254 | 3 |
 | h4 | Privada | 192.168.1.4/24 | 00:00:00:00:00:04 | 192.168.1.254 | 4 |
 
-Se realizaron las mismas pruebas que con `h2` para ambos puertos
-```
-mininet> h3 ping -c 1 h1
-PING 200.0.0.1 (200.0.0.1) 56(84) bytes of data.
-64 bytes from 200.0.0.1: icmp_seq=1 ttl=64 time=3.08 ms
+Conexiones TCP simultáneas de `h2` y `h3` hacia `h1`, durante 15 s:
 
---- 200.0.0.1 ping statistics ---
-1 packets transmitted, 1 received, 0% packet loss, time 0ms
-rtt min/avg/max/mdev = 3.078/3.078/3.078/0.000 ms
-``` 
-```
-INFO:protorouter:RECIBIDO: 192.168.1.3 → 200.0.0.1 | MAC: 00:00:00:00:00:03 → 00:00:00:bb:bb:bb | In Port: 3
-INFO:protorouter:MATCH: 192.168.1.3 pertenece a la red privada 192.168.1.0/24
-INFO:protorouter:ENVIANDO: 192.168.1.3 → 200.0.0.1 | MAC: 00:00:00:aa:aa:aa → 00:00:00:00:00:01 | Out Port: 1
+```text
+mininet> h2 iperf -c 200.0.0.1 -t 15 &
+mininet> h3 iperf -c 200.0.0.1 -t 15 &
+mininet> sh ovs-ofctl dump-flows s1
+tcp,in_port="s1-eth2",nw_src=192.168.1.2,nw_dst=200.0.0.1,tp_src=36554,tp_dst=5001 actions=mod_dl_src:00:00:00:aa:aa:aa,mod_dl_dst:00:00:00:00:00:01,mod_nw_src:200.0.0.254,mod_tp_src:65535,output:"s1-eth1"
+tcp,in_port="s1-eth1",nw_src=200.0.0.1,nw_dst=200.0.0.254,tp_src=5001,tp_dst=65535 actions=mod_dl_src:00:00:00:bb:bb:bb,mod_dl_dst:00:00:00:00:00:02,mod_nw_dst:192.168.1.2,mod_tp_dst:36554,output:"s1-eth2"
+tcp,in_port="s1-eth3",nw_src=192.168.1.3,nw_dst=200.0.0.1,tp_src=55954,tp_dst=5001 actions=mod_dl_src:00:00:00:aa:aa:aa,mod_dl_dst:00:00:00:00:00:01,mod_nw_src:200.0.0.254,mod_tp_src:65534,output:"s1-eth1"
+tcp,in_port="s1-eth1",nw_src=200.0.0.1,nw_dst=200.0.0.254,tp_src=5001,tp_dst=65534 actions=mod_dl_src:00:00:00:bb:bb:bb,mod_dl_dst:00:00:00:00:00:03,mod_nw_dst:192.168.1.3,mod_tp_dst:55954,output:"s1-eth3"
 ```
 
-```
-mininet> h4 ping -c 1 h1
-PING 200.0.0.1 (200.0.0.1) 56(84) bytes of data.
-64 bytes from 200.0.0.1: icmp_seq=1 ttl=64 time=2.51 ms
+Se instalaron cuatro reglas: dos por conexión, con un puerto público distinto para cada cliente. Los contadores del switch (más de 100000 paquetes por regla) muestran que el tráfico no pasa por el controlador.
 
---- 200.0.0.1 ping statistics ---
-1 packets transmitted, 1 received, 0% packet loss, time 0ms
-rtt min/avg/max/mdev = 2.509/2.509/2.509/0.000 ms
+Sin tráfico, `dump-flows` quedó vacío. Una conexión posterior de `h4` reutilizó un puerto liberado:
+
+```text
+mininet> h1 cat /tmp/tcp.log
+[  2] local 200.0.0.1 port 5001 connected with 200.0.0.254 port 65535
+[  3] local 200.0.0.1 port 5001 connected with 200.0.0.254 port 65534
+[  2] 0.0000-15.0013 sec  40.8 GBytes  23.4 Gbits/sec
+[  3] 0.0000-15.0004 sec  38.3 GBytes  21.9 Gbits/sec
+[  4] local 200.0.0.1 port 5001 connected with 200.0.0.254 port 65534
+[  4] 0.0000-3.0009 sec  11.0 GBytes  31.5 Gbits/sec
 ```
-```
-INFO:protorouter:RECIBIDO: 192.168.1.4 → 200.0.0.1 | MAC: 00:00:00:00:00:04 → 00:00:00:bb:bb:bb | In Port: 4
-INFO:protorouter:MATCH: 192.168.1.4 pertenece a la red privada 192.168.1.0/24
-INFO:protorouter:ENVIANDO: 192.168.1.4 → 200.0.0.1 | MAC: 00:00:00:aa:aa:aa → 00:00:00:00:00:01 | Out Port: 1
-```
+
+La conexión de `h2` también usó el 65535, el mismo puerto de la prueba de conectividad básica.
 
 ### Diferentes tipos de tráfico
+
+**TCP:** ver las pruebas anteriores.
+
+**UDP:** `h2` envió datagramas a `h1` en un solo sentido durante 15 s:
+
+```text
+mininet> h2 iperf -c 200.0.0.1 -u -t 15
+[  1] local 192.168.1.2 port 59809 connected with 200.0.0.1 port 5001
+[  1] 0.0000-15.0177 sec  1.88 MBytes  1.05 Mbits/sec
+[  1] Sent 1342 datagrams
+[  3] WARNING: did not receive ack of last datagram after 10 tries.
+mininet> h1 cat /tmp/udp.log
+[  1] local 200.0.0.1 port 5001 connected with 200.0.0.254 port 65535
+[  1] 0.0000-15.0060 sec  1.88 MBytes  1.05 Mbits/sec   0.085 ms 0/1341 (0%)
+```
+
+`h1` recibió el tráfico desde la IP pública, con un solo puerto durante toda la prueba y sin pérdidas. Al terminar, `dump-flows` mostraba solo la regla saliente: la entrante había vencido sin liberar el puerto.
+
+El warning corresponde al ACK final de iperf, que en esta prueba no volvió a `h2`. En una prueba de 3 s, con la regla entrante todavía activa, no aparece y `h2` recibe el reporte del servidor. Es consistente con el límite de [regla entrante vencida](#límites-actuales-sin-resolver).
+
+Para descartar pérdidas en el NAT, se capturó una prueba de 3 s con `tcpdump` en ambos extremos: `h2` envió 271 datagramas hacia `h1`, `h1` recibió 271, y todos miden 1470 bytes.
 
 ## Conclusión

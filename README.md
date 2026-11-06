@@ -24,7 +24,7 @@ TPs-REDES/
 │           ├── config.py           # Lee el JSON y configura los logs
 │           ├── ARP.py              # Resolución ARP y paquetes pendientes
 │           ├── PAT.py              # Traducción NAT por puertos 
-│           └── flujos.py           # Reglas OpenFlow y forwarding actual
+│           └── flujos.py           # Reglas OpenFlow con traducción
 └── docs/
 
 ```
