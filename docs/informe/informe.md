@@ -30,10 +30,10 @@ La tabla ARP está administrada en el controlador mediante el diccionario `arp_t
 Conceptualmente, la tabla tiene la siguiente estructura:
 
 ```text
-IP -> MAC
+IP -> (MAC, última vez visto)
 
-192.168.1.2 -> 00:00:00:00:00:02
-200.0.0.1   -> 00:00:00:00:00:01
+192.168.1.2 -> (00:00:00:00:00:02, 1730000000.0)
+200.0.0.1   -> (00:00:00:00:00:01, 1730000004.2)
 ```
 
 #### ¿Cuándo se actualiza la tabla ARP?
@@ -42,6 +42,16 @@ El controlador actualiza la `arp_table` en dos momentos:
 
 1. **Al recibir un `ARP REQUEST`:** Cuando un host de la red envía una consulta ARP preguntando por la IP del gateway (por ejemplo, h2 buscando la MAC de 192.168.1.254), la trama pasa por el controlador. En ese instante, el método handle_arp inspecciona los campos del emisor (protosrc y hwsrc) e inserta de forma inmediata esa IP y MAC en la arp_table. Este mecanismo permite aprender las direcciones de los hosts locales sin costo adicional y sin necesidad de emitir peticiones adicionales por la red.
 2. **Al recibir un `ARP REPLY`:** Cuando un paquete IP tiene como destino una dirección MAC desconocida, el controlador genera y emite una solicitud ARP REQUEST proactiva hacia la red pública. Cuando el host de destino responde mediante una trama ARP REPLY, el controlador intercepta el mensaje en la rama correspondiente de handle_arp, extrae la asociación (IP → MAC) y la registra en la arp_table. Inmediatamente después de actualizar la tabla, el controlador utiliza esta entrada para despachar los paquetes que se encontraban retenidos en el buffer.
+
+#### Vencimiento de entradas
+
+Cada entrada vence si pasan más de `ARP_TIMEOUT = 20` s (`config.py`) sin ver un ARP de esa IP. Cada ARP visto la refresca.
+
+El vencimiento se evalúa en `resolve_mac`: si la entrada venció, se borra, se loguea `ARP VENCIDO` y se trata como desconocida (se retiene el paquete y se envía un `ARP REQUEST`). No usamos un `Timer`: con pocos hosts alcanza con revisar la entrada al consultarla.
+
+El valor se eligió para el entorno de prueba: es mayor que el `idle_timeout` de los flujos (10 s) y lo bastante corto para ver el vencimiento en una demo. Los dos timeouts son independientes: con un flujo instalado, el switch reenvía sin consultar al controlador.
+
+No hay reintentos de `ARP REQUEST` ni timeout para `packet_buffer`.
 
 ### 2. Retención de paquetes pendientes
 

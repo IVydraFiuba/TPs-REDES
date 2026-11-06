@@ -66,6 +66,10 @@ _public_host = next(
 PUBLIC_PORT = _public_host["switch_port"]
 # importante: PUBLIC_PORT es un puerto del switch, no un puerto TCP/UDP.
 
+# Segundos sin ver un ARP de una IP tras los cuales su entrada en la tabla ARP
+# se considera vieja y se vuelve a resolver (evita usar MACs desactualizadas).
+ARP_TIMEOUT = 20
+
 
 
 # Logger de POX y colores ANSI para distinguir mensajes en la terminal.
