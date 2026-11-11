@@ -1,9 +1,14 @@
 """Tabla de traducción y asignación de puertos públicos."""
+import time
+
 from pox.lib.packet.ipv4 import ipv4
 
 #Definido por la IANA
 PUERTO_MIN = 49152
 PUERTO_MAX = 65535
+
+# Segundos sin pings tras los cuales se libera un identificador de ICMP
+ICMP_TIMEOUT = 10
 
 
 class PAT:
@@ -14,12 +19,18 @@ class PAT:
         self.reglas = {}  #(protocolo, puerto_publico) -> sentidos con regla activa
         self.puertos_tcp = list(range(PUERTO_MIN, PUERTO_MAX + 1));
         self.puertos_udp = list(range(PUERTO_MIN, PUERTO_MAX + 1));
+        #En ICMP el identificador del ping cumple el papel del puerto
+        self.ids_icmp = list(range(1, 65536))
+        #ICMP no tiene reglas ni FlowRemoved: se libera por tiempo sin uso
+        self.ultimo_uso = {}  #(protocolo, id_publico) -> última vez usado
 
     def _asignar_puerto(self, protocolo):
         if(protocolo == ipv4.TCP_PROTOCOL and len(self.puertos_tcp) > 0):
             return self.puertos_tcp.pop();
         elif(protocolo == ipv4.UDP_PROTOCOL and len(self.puertos_udp) > 0):
             return self.puertos_udp.pop();
+        elif(protocolo == ipv4.ICMP_PROTOCOL and len(self.ids_icmp) > 0):
+            return self.ids_icmp.pop()
         return None
 
     def obtener_puerto(self, protocolo, ip_privada, puerto_privado):
@@ -49,8 +60,18 @@ class PAT:
         if(len(reglas) == 0):
             self.liberar(protocolo, puerto_publico)
 
+    def marcar_uso(self, protocolo, id_publico):
+        self.ultimo_uso[(protocolo, id_publico)] = time.time()
+
+    def liberar_icmp_vencidos(self):
+        ahora = time.time()
+        vencidos = [key for key, visto in self.ultimo_uso.items() if ahora - visto > ICMP_TIMEOUT]
+        for protocolo, id_publico in vencidos:
+            self.liberar(protocolo, id_publico)
+
     def liberar(self, protocolo, puerto_publico):
         key_entrantes =(protocolo, puerto_publico)
+        self.ultimo_uso.pop(key_entrantes, None)
         if(not key_entrantes in self.entrantes):
             return
         key_salientes = self.entrantes.pop(key_entrantes)
@@ -58,4 +79,6 @@ class PAT:
         self.reglas.pop(key_entrantes, None)
         if(protocolo == ipv4.TCP_PROTOCOL):
             return self.puertos_tcp.append(puerto_publico);
+        elif(protocolo == ipv4.ICMP_PROTOCOL):
+            return self.ids_icmp.append(puerto_publico)
         return self.puertos_udp.append(puerto_publico);

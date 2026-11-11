@@ -1,5 +1,6 @@
 """Reglas de forwarding con traducción PAT y envío del primer paquete."""
 import pox.openflow.libopenflow_01 as of
+from pox.lib.packet.icmp import TYPE_ECHO_REPLY, TYPE_ECHO_REQUEST
 from pox.lib.packet.ipv4 import ipv4
 
 from .config import CYAN, PRIVATE_MAC, PUBLIC_MAC, PUBLIC_PORT, log_color, PUBLIC_IP
@@ -10,6 +11,7 @@ class Flujos:
     def __init__(self, connection):
         self.connection = connection
         self.pat = PAT()
+        self.hosts = {}  # ip_privada -> (mac, puerto del switch), para devolver los pings
 
     def manage_flow_removed(self, event):
         match = event.ofp.match
@@ -28,7 +30,10 @@ class Flujos:
         trans_pkt = ip_pkt.payload
         in_port = event.port
 
-        #Por si es ICMP, así no rompe, pero no funciona el ping
+        if(ip_pkt.protocol == ipv4.ICMP_PROTOCOL):
+            self.process_icmp_saliente(event, dest_mac)
+            return
+
         if(ip_pkt.protocol != ipv4.TCP_PROTOCOL and ip_pkt.protocol != ipv4.UDP_PROTOCOL):
             return
 
@@ -93,5 +98,55 @@ class Flujos:
         msg.data = packet.pack()
         msg.actions.append(of.ofp_action_output(port=PUBLIC_PORT))
         log_color(CYAN, f"ENVIANDO: {ip_pkt.srcip} → {ip_pkt.dstip} | MAC: {PUBLIC_MAC} → {dest_mac} | Out Port: {PUBLIC_PORT}")
+        self.connection.send(msg)
+
+    # OpenFlow 1.0 no puede reescribir el identificador de ICMP, así que los pings
+    # no usan reglas: cada uno pasa por el controlador.
+    def process_icmp_saliente(self, event, dest_mac):
+        packet = event.parsed
+        ip_pkt = packet.payload
+        echo = packet.find("echo")
+        if(echo is None or ip_pkt.payload.type != TYPE_ECHO_REQUEST):
+            return
+
+        self.pat.liberar_icmp_vencidos()
+        id_publico = self.pat.obtener_puerto(ip_pkt.protocol, ip_pkt.srcip, echo.id)
+        if(id_publico is None):
+            return
+        self.pat.marcar_uso(ip_pkt.protocol, id_publico)
+        self.hosts[ip_pkt.srcip] = (packet.src, event.port)
+
+        log_color(CYAN, f"PING SALIENTE: {ip_pkt.srcip} id {echo.id} → {PUBLIC_IP} id {id_publico} | Destino: {ip_pkt.dstip}")
+        packet.src = PUBLIC_MAC
+        packet.dst = dest_mac
+        ip_pkt.srcip = PUBLIC_IP
+        echo.id = id_publico
+        msg = of.ofp_packet_out()
+        msg.data = packet.pack()
+        msg.actions.append(of.ofp_action_output(port=PUBLIC_PORT))
+        self.connection.send(msg)
+
+    def process_icmp_entrante(self, event):
+        packet = event.parsed
+        ip_pkt = packet.payload
+        echo = packet.find("echo")
+        if(echo is None or ip_pkt.payload.type != TYPE_ECHO_REPLY):
+            return
+
+        conexion = self.pat.buscar_entrante(ip_pkt.protocol, echo.id)
+        if(conexion is None):
+            return
+        ip_priv, id_priv = conexion
+        mac_priv, puerto_switch = self.hosts[ip_priv]
+        self.pat.marcar_uso(ip_pkt.protocol, echo.id)
+
+        log_color(CYAN, f"PING ENTRANTE: {ip_pkt.srcip} → {PUBLIC_IP} id {echo.id} → {ip_priv} id {id_priv}")
+        packet.src = PRIVATE_MAC
+        packet.dst = mac_priv
+        ip_pkt.dstip = ip_priv
+        echo.id = id_priv
+        msg = of.ofp_packet_out()
+        msg.data = packet.pack()
+        msg.actions.append(of.ofp_action_output(port=puerto_switch))
         self.connection.send(msg)
 

@@ -140,6 +140,12 @@ Cada conexión tiene dos reglas, y cada una vence según el tráfico de su senti
 
 Por eso `self.reglas` guarda los sentidos con regla activa de cada conexión, y el puerto se libera cuando vencieron los dos. Usamos un set en lugar de un contador porque, al reinstalar las reglas de una conexión, la que seguía activa se reemplaza sin aviso: un contador se desfasaría.
 
+### Traducción de ICMP en el controlador
+
+ICMP no tiene puertos: el NAT distingue cada ping por su identificador, que el *Echo Reply* repite. Usamos `PAT` con ese identificador en lugar del puerto, así varios hosts pueden hacer ping al mismo destino a la vez.
+
+OpenFlow 1.0 no puede matchear ni reescribir ese campo, así que los pings no usan reglas. El controlador traduce cada *Echo Request* (IP de origen e identificador) y cada *Echo Reply* (IP de destino e identificador), y los reenvía con `PacketOut`. Como no hay reglas, tampoco hay `FlowRemoved`: un identificador se libera tras 10 s sin pings (`ICMP_TIMEOUT`). Pasar los pings por el controlador es aceptable porque son pocos paquetes.
+
 ## Problemas encontrados y soluciones implementadas
 
 ### Liberación prematura de puertos
@@ -148,7 +154,6 @@ Liberar el puerto con el primer `FlowRemoved` permitía reasignarlo mientras la 
 
 ### Límites actuales (sin resolver)
 
-- **ICMP:** OpenFlow 1.0 no puede matchear ni reescribir el identificador de ICMP, así que los pings no se traducen con reglas. El controlador descarta lo que no sea TCP o UDP, y por eso `h2 ping h1` no responde.
 - **Regla entrante vencida:** `handle_ip` descarta lo que llega de la red pública sin regla, aunque la conexión siga en la tabla. En UDP, si la vuelta llega después de 10 s sin tráfico entrante, se pierde.
 - **Un puerto privado hacia varios destinos:** las reglas se registran por puerto público, no por destino. Si un socket UDP habla con dos destinos a la vez, el puerto podría liberarse antes de tiempo.
 
@@ -174,7 +179,7 @@ mininet> h1 cat /tmp/tcp.log
 
 `h2` usa su IP y puerto privados, y `h1` ve la conexión desde la IP pública y el puerto 65535, el primero asignado.
 
-`h2 ping h1` no responde con la versión actual: ver [Límites actuales](#límites-actuales-sin-resolver).
+<!-- TODO: agregar la prueba de `h2 ping h1` (y de varios hosts a la vez) cuando se ejecute en Mininet. -->
 
 ### Múltiples clientes
 Para probar múltiples clientes se agregaron a la topología inicial los hosts `h3` y `h4`, en la misma red privada que `h2`.

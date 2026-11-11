@@ -1,11 +1,13 @@
 """Entrada del controlador: eventos OpenFlow y coordinación del router."""
 from pox.core import core
 from pox.lib.packet.ethernet import ethernet
+from pox.lib.packet.ipv4 import ipv4
 from tp_router.ARP import ARP
 from tp_router.config import (
     GREEN,
     PRIVATE_MASK,
     PRIVATE_SUBNET,
+    PUBLIC_IP,
     RED,
     YELLOW,
     log,
@@ -56,6 +58,10 @@ class ProtoRouter:
             if dest_mac is None:
                 return  # quedó en el buffer
             self.flujos.process_ip_with_destination_mac(event, dest_mac)
+
+        elif ip_pkt.dstip == PUBLIC_IP and ip_pkt.protocol == ipv4.ICMP_PROTOCOL:
+            # Respuesta de ping: no tiene regla instalada, la traduce el controlador
+            self.flujos.process_icmp_entrante(event)
 
         else:
             log_color(RED, f"NO MATCH: {ip_pkt.srcip} no pertenece a {PRIVATE_SUBNET}/{PRIVATE_MASK}")
