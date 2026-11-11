@@ -10,6 +10,10 @@ from .config import (
     ARP_TIMEOUT,
     CYAN,
     GREEN,
+    PRIVATE_IP,
+    PRIVATE_MAC,
+    PRIVATE_MASK,
+    PRIVATE_SUBNET,
     PUBLIC_IP,
     PUBLIC_MAC,
     PUBLIC_PORT,
@@ -20,11 +24,10 @@ from .config import (
 
 
 class ARP:
-    def __init__(self, connection, on_resolved):
+    def __init__(self, connection):
         self.connection = connection
-        self.on_resolved = on_resolved
-        self.arp_table = {}  # IPAddr -> (EthAddr, ultima_vez_visto)
-        self.packet_buffer = {}  # IPAddr -> eventos pendientes
+        self.arp_table = {}  # IPAddr -> (EthAddr, puerto del switch, ultima_vez_visto)
+        self.packet_buffer = {}  # IPAddr -> [(evento pendiente, función a llamar con la MAC)]
 
     def handle_arp(self, event):
         packet = event.parsed
@@ -34,8 +37,8 @@ class ARP:
             my_mac = SWITCH_IPS[arp_pkt.protodst]
 
             # Quien pregunta nos deja su IP y MAC
-            self.arp_table[arp_pkt.protosrc] = (arp_pkt.hwsrc, time.time())
-            log_color(GREEN, f"ARP APRENDIDO (request): {arp_pkt.protosrc} está en {arp_pkt.hwsrc}")
+            self.arp_table[arp_pkt.protosrc] = (arp_pkt.hwsrc, event.port, time.time())
+            log_color(GREEN, f"ARP APRENDIDO (request): {arp_pkt.protosrc} está en {arp_pkt.hwsrc} | Port: {event.port}")
 
             # Paquete ARP de respuesta
             arp_reply = arp()
@@ -64,39 +67,53 @@ class ARP:
             src_ip = arp_pkt.protosrc
             src_mac = arp_pkt.hwsrc
 
-            self.arp_table[src_ip] = (src_mac, time.time())
-            log_color(GREEN, f"ARP APRENDIDO: {src_ip} está en {src_mac}")
+            self.arp_table[src_ip] = (src_mac, event.port, time.time())
+            log_color(GREEN, f"ARP APRENDIDO: {src_ip} está en {src_mac} | Port: {event.port}")
 
             # Si teniamos paquetes esperando por esta IP, los enviamos
             if src_ip in self.packet_buffer:
                 log_color(CYAN, f"Despachando paquetes pendientes para {src_ip}...")
-                for pending_event in self.packet_buffer[src_ip]:
-                    self.on_resolved(pending_event, src_mac)
+                for pending_event, on_resolved in self.packet_buffer[src_ip]:
+                    on_resolved(pending_event, src_mac)
                 del self.packet_buffer[src_ip]
 
 
-    def send_arp_request(self, target_ip, out_port):
+    def send_arp_request(self, target_ip):
+        # Se pregunta desde la interfaz del router que está en la red del destino
+        privada = target_ip.inNetwork(PRIVATE_SUBNET, PRIVATE_MASK)
+        src_ip = PRIVATE_IP if privada else PUBLIC_IP
+        src_mac = PRIVATE_MAC if privada else PUBLIC_MAC
+
         arp_req = arp()
         arp_req.opcode = arp.REQUEST
-        arp_req.hwsrc = PUBLIC_MAC
-        arp_req.protosrc = PUBLIC_IP
+        arp_req.hwsrc = src_mac
+        arp_req.protosrc = src_ip
         arp_req.hwdst = EthAddr("00:00:00:00:00:00")
         arp_req.protodst = target_ip
 
         eth = ethernet()
         eth.type = ethernet.ARP_TYPE
-        eth.src = PUBLIC_MAC
+        eth.src = src_mac
         eth.dst = EthAddr("ff:ff:ff:ff:ff:ff")
         eth.payload = arp_req
 
         msg = of.ofp_packet_out()
         msg.data = eth.pack()
-        msg.actions.append(of.ofp_action_output(port=out_port))
+        if privada:
+            # FLOOD sale por todos los puertos menos in_port: o sea, por los privados
+            msg.in_port = PUBLIC_PORT
+            msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        else:
+            msg.actions.append(of.ofp_action_output(port=PUBLIC_PORT))
         self.connection.send(msg)
-        log_color(CYAN, f"ARP REQUEST: Who has {target_ip}? Tell {PUBLIC_IP}")
+        log_color(CYAN, f"ARP REQUEST: Who has {target_ip}? Tell {src_ip}")
 
 
-    def resolve_mac(self, event, ip):
+    def puerto(self, ip):
+        """Puerto del switch donde se aprendió ip (llamar después de resolve_mac)."""
+        return self.arp_table[ip][1]
+
+    def resolve_mac(self, event, ip, on_resolved):
         """Punto de entrada de ARP.
 
         Devuelve la MAC de ip si está en la tabla ARP.
@@ -109,20 +126,20 @@ class ARP:
         """
 
         if ip in self.arp_table:
-            mac, last_seen = self.arp_table[ip]
+            mac, _, last_seen = self.arp_table[ip]
             if time.time() - last_seen <= ARP_TIMEOUT:
                 return mac
             del self.arp_table[ip]
             log_color(YELLOW, f"ARP VENCIDO: {ip} ({mac}) sin refrescar hace más de {ARP_TIMEOUT}s")
 
         already_asked = ip in self.packet_buffer
-        self.packet_buffer.setdefault(ip, []).append(event)
+        self.packet_buffer.setdefault(ip, []).append((event, on_resolved))
 
         if already_asked:
             log_color(YELLOW, f"MAC desconocida para {ip}. Reteniendo paquete (ARP Request ya enviado)")
         else:
             log_color(YELLOW, f"MAC desconocida para {ip}. Reteniendo paquete y enviando ARP Request...")
-            self.send_arp_request(ip, PUBLIC_PORT)
+            self.send_arp_request(ip)
         return None
 
 

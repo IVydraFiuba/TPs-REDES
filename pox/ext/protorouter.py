@@ -19,8 +19,8 @@ from tp_router.flujos import Flujos
 class ProtoRouter:
     def __init__(self, connection):
         self.connection = connection
-        self.flujos = Flujos(connection)
-        self.arp = ARP(connection, self.flujos.process_ip_with_destination_mac)
+        self.arp = ARP(connection)
+        self.flujos = Flujos(connection, self.arp)
         connection.addListeners(self)
 
     def _handle_PacketIn(self, event):
@@ -54,7 +54,7 @@ class ProtoRouter:
 
             dest_ip = ip_pkt.dstip
 
-            dest_mac = self.arp.resolve_mac(event, dest_ip)
+            dest_mac = self.arp.resolve_mac(event, dest_ip, self.flujos.process_ip_with_destination_mac)
             if dest_mac is None:
                 return  # quedó en el buffer
             self.flujos.process_ip_with_destination_mac(event, dest_mac)

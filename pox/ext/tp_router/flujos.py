@@ -8,10 +8,10 @@ from .PAT import PAT
 
 
 class Flujos:
-    def __init__(self, connection):
+    def __init__(self, connection, arp):
         self.connection = connection
+        self.arp = arp
         self.pat = PAT()
-        self.hosts = {}  # ip_privada -> (mac, puerto del switch), para devolver los pings
 
     def manage_flow_removed(self, event):
         match = event.ofp.match
@@ -114,7 +114,6 @@ class Flujos:
         if(id_publico is None):
             return
         self.pat.marcar_uso(ip_pkt.protocol, id_publico)
-        self.hosts[ip_pkt.srcip] = (packet.src, event.port)
 
         log_color(CYAN, f"PING SALIENTE: {ip_pkt.srcip} id {echo.id} → {PUBLIC_IP} id {id_publico} | Destino: {ip_pkt.dstip}")
         packet.src = PUBLIC_MAC
@@ -126,7 +125,8 @@ class Flujos:
         msg.actions.append(of.ofp_action_output(port=PUBLIC_PORT))
         self.connection.send(msg)
 
-    def process_icmp_entrante(self, event):
+    # mac_priv llega cuando ARP despacha la respuesta retenida; si no, se resuelve acá
+    def process_icmp_entrante(self, event, mac_priv=None):
         packet = event.parsed
         ip_pkt = packet.payload
         echo = packet.find("echo")
@@ -137,7 +137,11 @@ class Flujos:
         if(conexion is None):
             return
         ip_priv, id_priv = conexion
-        mac_priv, puerto_switch = self.hosts[ip_priv]
+        if(mac_priv is None):
+            mac_priv = self.arp.resolve_mac(event, ip_priv, self.process_icmp_entrante)
+            if(mac_priv is None):
+                return  # quedó retenida hasta que el host responda el ARP
+        puerto_switch = self.arp.puerto(ip_priv)
         self.pat.marcar_uso(ip_pkt.protocol, echo.id)
 
         log_color(CYAN, f"PING ENTRANTE: {ip_pkt.srcip} → {PUBLIC_IP} id {echo.id} → {ip_priv} id {id_priv}")
